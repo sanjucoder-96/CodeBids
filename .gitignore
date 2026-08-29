@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/backups/
+*.log
+.DS_Store
+coverage/
+.vite/
+export/
+data/*.err
+data/*.log

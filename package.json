@@ -1,0 +1,41 @@
+{
+  "name": "code-market",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CSI Club \u00e2\u20ac\u201d Code Market. Offline-first, LAN-only live competition platform for Round 2.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev -w @code-market/server",
+    "dev:client": "npm run dev -w @code-market/client",
+    "build": "npm run build -w @code-market/shared && npm run build -w @code-market/client && npm run build -w @code-market/server",
+    "start": "node packages/server/dist/index.js",
+    "typecheck": "npm run build -w @code-market/shared && npm run typecheck -w @code-market/server && npm run typecheck -w @code-market/client",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "npm run build -w @code-market/shared && npm run test -w @code-market/shared && npm run test -w @code-market/server && npm run test -w @code-market/client",
+    "test:server": "npm run test -w @code-market/server",
+    "test:client": "npm run test -w @code-market/client",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "offline:check": "node scripts/offline-check.mjs",
+    "seed": "node packages/server/dist/index.js --seed",
+    "reset": "node packages/server/dist/index.js --reset"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.21.0"
+  }
+}

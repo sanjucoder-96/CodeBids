@@ -1,0 +1,138 @@
+/*
+ * Design tokens - CSI Club / Code Market.
+ *
+ * The visual language is a night trading floor: near-black ground, a single
+ * electric accent, money-green gains, loss-red drops, and gold reserved
+ * exclusively for PREMIUM. Nothing is imported from a CDN (spec section 41).
+ */
+
+:root {
+  /* --- ground --------------------------------------------------------- */
+  --bg-void: #05070c;
+  --bg-base: #080b12;
+  --bg-panel: #0d111b;
+  --bg-panel-2: #121826;
+  --bg-raised: #172032;
+  --bg-input: #0a0e17;
+  --bg-hover: #1c2739;
+
+  /* --- lines ---------------------------------------------------------- */
+  --line: #1e2739;
+  --line-strong: #2c3850;
+  --line-soft: #161d2b;
+
+  /* --- text ----------------------------------------------------------- */
+  --text: #e8edf7;
+  --text-strong: #ffffff;
+  --text-muted: #8b98b0;
+  --text-dim: #5c6880;
+  --text-faint: #3d4759;
+
+  /* --- brand ---------------------------------------------------------- */
+  --accent: #3d8bff;
+  --accent-soft: #6ba5ff;
+  --accent-dim: rgba(61, 139, 255, 0.16);
+  --accent-glow: rgba(61, 139, 255, 0.35);
+
+  /* --- semantic ------------------------------------------------------- */
+  --gain: #22d67f;
+  --gain-soft: #5ce6a3;
+  --gain-dim: rgba(34, 214, 127, 0.14);
+  --gain-glow: rgba(34, 214, 127, 0.35);
+
+  --loss: #ff5470;
+  --loss-soft: #ff8296;
+  --loss-dim: rgba(255, 84, 112, 0.14);
+  --loss-glow: rgba(255, 84, 112, 0.32);
+
+  --premium: #ffb930;
+  --premium-soft: #ffd171;
+  --premium-dim: rgba(255, 185, 48, 0.14);
+  --premium-glow: rgba(255, 185, 48, 0.4);
+
+  --warn: #ff9f43;
+  --info: #46c8f5;
+
+  /* --- typography ------------------------------------------------------ */
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'Cascadia Mono',
+    'SF Mono', Menlo, Consolas, monospace;
+
+  --fs-2xs: 0.6875rem;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-base: 0.9375rem;
+  --fs-md: 1.0625rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: 2rem;
+  --fs-3xl: 2.75rem;
+  --fs-4xl: 3.75rem;
+  --fs-5xl: 5rem;
+
+  --tracking-wide: 0.08em;
+  --tracking-wider: 0.16em;
+  --tracking-widest: 0.28em;
+
+  /* --- space ----------------------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+
+  /* --- shape ----------------------------------------------------------- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* --- depth ------------------------------------------------------------ */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 0 1px var(--accent-dim), 0 0 32px var(--accent-glow);
+
+  /* --- motion ------------------------------------------------------------ */
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 420ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* --- layout ------------------------------------------------------------ */
+  --header-h: 64px;
+  --max-w: 1240px;
+}
+
+/*
+ * Projector scope: everything scales up for a room-sized screen (spec 24).
+ * The projector overrides sizes rather than defining a second palette, so the
+ * two surfaces can never drift apart.
+ */
+.projector-scope {
+  --fs-base: 1.25rem;
+  --fs-md: 1.5rem;
+  --fs-lg: 2rem;
+  --fs-xl: 2.75rem;
+  --fs-2xl: 3.5rem;
+  --fs-3xl: 5rem;
+  --fs-4xl: 7rem;
+  --fs-5xl: 9.5rem;
+}
+
+/* Respect the OS setting (spec section 46). */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-slow: 1ms;
+  }
+}
