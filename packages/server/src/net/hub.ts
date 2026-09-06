@@ -41,7 +41,7 @@ export class Hub {
   private clientCounter = 0;
   /** Set by close(): stops late socket events from touching a closed engine. */
   private closing = false;
-  private pendingLeaderboard: EngineEvent | null = null;
+  private pendingLeaderboard = new Map<string, EngineEvent>();
   private leaderboardTimer: NodeJS.Timeout | null = null;
   private readonly heartbeat: NodeJS.Timeout;
 
@@ -350,13 +350,23 @@ export class Hub {
     // Leaderboard updates are the highest-frequency broadcast: coalesce them so
     // a rapid capital burst still results in one clean animation frame.
     if (event.name === 'LEADERBOARD_UPDATED') {
-      this.pendingLeaderboard = event;
+      /*
+       * One pending update PER AUDIENCE.
+       *
+       * A single refresh emits the board three times, once each for the
+       * organizer, the projector and the participants, because the blackout
+       * gives them different views of it. A single pending slot let the last
+       * emit overwrite the other two, so only participants ever received a
+       * live update: the projector and the organizer sat on stale standings
+       * until something else made them re-read a snapshot.
+       */
+      this.pendingLeaderboard.set(audienceKey(event.audience), event);
       if (!this.leaderboardTimer) {
         this.leaderboardTimer = setTimeout(() => {
           this.leaderboardTimer = null;
-          const pending = this.pendingLeaderboard;
-          this.pendingLeaderboard = null;
-          if (pending) this.dispatch(pending);
+          const pending = [...this.pendingLeaderboard.values()];
+          this.pendingLeaderboard.clear();
+          for (const update of pending) this.dispatch(update);
         }, LEADERBOARD_COALESCE_MS);
         if (typeof this.leaderboardTimer.unref === 'function') this.leaderboardTimer.unref();
       }
@@ -407,6 +417,11 @@ export class Hub {
       JSON.stringify({ t: 'ERROR', d: { code, message, ...(rid ? { rid } : {}) }, ts: Date.now(), ...(rid ? { rid } : {}) }),
     );
   }
+}
+
+/** Identity of an audience, so one pending update can be held per audience. */
+function audienceKey(audience: Audience): string {
+  return audience.kind === 'team' ? `team:${audience.teamId}` : audience.kind;
 }
 
 function matches(audience: Audience, client: Client): boolean {

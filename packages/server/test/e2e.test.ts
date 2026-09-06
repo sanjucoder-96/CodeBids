@@ -461,6 +461,24 @@ describe('finale (spec 2, 11, 18)', () => {
     expect(participant.leaderboard[0]?.teamId).toBe('T03');
   }, 60_000);
 
+  it('still withholds live board updates from the hall during the blackout', async () => {
+    // The hub coalesces leaderboard traffic per audience. That must not become
+    // a way for the sealed board to reach the projector: the engine simply
+    // never emits it there while the blackout is in force.
+    expect(app.engine.isFinalStretch()).toBe(true);
+    organizer.clear();
+    projector.clear();
+
+    await organizer.call('ADJUST_CAPITAL', { teamId: 'T05', amount: 40, reason: 'blackout probe' });
+
+    const isBoard = (f: Envelope) => f.t === 'LEADERBOARD_UPDATED';
+    await organizer.wait(isBoard);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(organizer.frames.filter(isBoard).length).toBeGreaterThan(0);
+    expect(projector.frames.filter(isBoard)).toHaveLength(0);
+  }, 30_000);
+
   it('completes the round and produces a top three', async () => {
     const podium = (await organizer.call('COMPLETE_GAME', {})) as {
       place: number;
@@ -508,5 +526,78 @@ describe('finale (spec 2, 11, 18)', () => {
     expect(dossier.transactions.length).toBeGreaterThan(1);
     expect(dossier.audit.length).toBeGreaterThan(0);
     expect((await get('/api/organizer/team/NOPE', organizerToken)).status).toBe(404);
+  });
+});
+
+describe('leaderboard broadcasts reach every audience', () => {
+  /**
+   * One refresh emits the board three times, once per audience, because the
+   * blackout gives the organizer, the projector and the participants different
+   * views of it. The hub coalesces rapid leaderboard traffic into one frame,
+   * and a single pending slot used to let the last emit overwrite the other
+   * two. The result was that only participants ever saw a live update: the
+   * projector and the organizer showed stale standings until something else
+   * made them re-read a snapshot.
+   */
+  it('sends one update to the organizer, the projector and the teams', async () => {
+    const team = players.get('T06') as Client;
+    // Earlier tests in this file have already moved capital around, so the
+    // baseline is whatever the engine holds now.
+    const before = app.repo.getTeam('T06')?.capital as number;
+    organizer.clear();
+    projector.clear();
+    team.clear();
+
+    await organizer.call('ADJUST_CAPITAL', {
+      teamId: 'T06',
+      amount: 25,
+      reason: 'broadcast probe',
+    });
+
+    const isBoard = (f: Envelope) => f.t === 'LEADERBOARD_UPDATED';
+    await Promise.all([organizer.wait(isBoard), projector.wait(isBoard), team.wait(isBoard)]);
+
+    for (const [label, client] of [
+      ['organizer', organizer],
+      ['projector', projector],
+      ['team', team],
+    ] as [string, Client][]) {
+      const board = client.frames.filter(isBoard).at(-1);
+      const rows = (board?.d as { rows: { teamId: string; capital: number }[] }).rows;
+      const row = rows.find((r) => r.teamId === 'T06');
+      expect(row?.capital, `${label} saw a stale board`).toBe(before + 25);
+    }
+  });
+
+  it('coalesces a burst without dropping any audience', async () => {
+    const before = app.repo.getTeam('T07')?.capital as number;
+    organizer.clear();
+    projector.clear();
+
+    for (let i = 0; i < 6; i++) {
+      await organizer.call('ADJUST_CAPITAL', { teamId: 'T07', amount: 10, reason: 'burst' });
+    }
+
+    const isBoard = (f: Envelope) => f.t === 'LEADERBOARD_UPDATED';
+    await Promise.all([organizer.wait(isBoard), projector.wait(isBoard)]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Coalescing means far fewer frames than changes, but never zero.
+    for (const [label, client] of [
+      ['organizer', organizer],
+      ['projector', projector],
+    ] as [string, Client][]) {
+      const count = client.frames.filter(isBoard).length;
+      expect(count, `${label} received nothing`).toBeGreaterThan(0);
+      expect(count, `${label} was not coalesced`).toBeLessThan(6);
+    }
+
+    // And the last frame each surface holds is the settled truth.
+    const finalRows = (
+      projector.frames.filter(isBoard).at(-1)?.d as {
+        rows: { teamId: string; capital: number }[];
+      }
+    ).rows;
+    expect(finalRows.find((r) => r.teamId === 'T07')?.capital).toBe(before + 60);
   });
 });
