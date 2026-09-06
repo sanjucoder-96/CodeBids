@@ -1,24 +1,33 @@
 /**
- * The hall leaderboard (spec sections 25, 26).
+ * The hall leaderboard (spec sections 16, 17).
  *
- * Large typography, minimal clutter, an explicit qualification line, and rows
- * that physically travel when a team overtakes another.
+ * Large typography, minimal clutter, the podium line, and rows that physically
+ * travel when a team overtakes another.
+ *
+ * The board must fit the screen it is projected on: a row the hall cannot see
+ * is worse than a smaller one. The rows share the available height and the type
+ * steps down as the field grows.
  */
 
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { Leaderboard } from '../ui/Leaderboard.js';
-import { challengeLabel } from '../lib/format.js';
+import { slotLabel } from '../lib/format.js';
+
+/** As many rows as stay legible from the back of a hall. */
+export const MAX_PROJECTOR_ROWS = 12;
 
 export function ProjectorLeaderboard() {
   const leaderboard = useStore((s) => s.leaderboard);
   const changed = useStore((s) => s.changedTeams);
   const config = useStore((s) => s.config);
   const game = useStore((s) => s.game);
-  const challenge = useStore((s) => s.challenge);
+  const question = useStore((s) => s.question);
   const teams = useStore((s) => s.teams);
 
   const online = teams.filter((t) => t.connectionStatus === 'online').length;
+  const shown = Math.min(leaderboard.length, MAX_PROJECTOR_ROWS);
+  const density = shown <= 6 ? 'roomy' : shown <= 10 ? 'normal' : 'dense';
 
   return (
     <div className="pj-leaderboard">
@@ -42,13 +51,13 @@ export function ProjectorLeaderboard() {
         </div>
 
         <div className="pj-header__right">
-          {challenge ? (
+          {question ? (
             <div className="pj-header__chip">
-              {challengeLabel(challenge.index, challenge.marketType)}
+              {slotLabel(question.blockNumber, question.positionInBlock, question.kind)}
             </div>
           ) : null}
           {game?.phase === 'paused' ? <div className="pj-header__chip pj-header__chip--warn">PAUSED</div> : null}
-          {game?.phase === 'complete' ? (
+          {game?.phase === 'completed' ? (
             <div className="pj-header__chip pj-header__chip--gain">FINAL RESULT</div>
           ) : null}
           <div className="pj-header__meta">
@@ -59,20 +68,23 @@ export function ProjectorLeaderboard() {
 
       <div className="pj-leaderboard__title">LIVE LEADERBOARD</div>
 
-      <div className="pj-leaderboard__board">
+      <div className="pj-leaderboard__board" data-density={density}>
         <Leaderboard
           rows={leaderboard}
-          qualifiers={config.qualifiers}
           currencySymbol={config.currencySymbol}
           changed={changed}
           variant="projector"
-          maxRows={12}
+          maxRows={MAX_PROJECTOR_ROWS}
         />
       </div>
 
       <footer className="pj-footer">
-        <span>TOP {config.qualifiers} ADVANCE TO ROUND 3</span>
-        {leaderboard.length > 12 ? <span>Showing top 12 of {leaderboard.length} teams</span> : null}
+        <span>TOP {config.podiumPlaces} TAKE THE PODIUM</span>
+        {leaderboard.length > MAX_PROJECTOR_ROWS ? (
+          <span>
+            Showing top {MAX_PROJECTOR_ROWS} of {leaderboard.length} teams
+          </span>
+        ) : null}
       </footer>
     </div>
   );

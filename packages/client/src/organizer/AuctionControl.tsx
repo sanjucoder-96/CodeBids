@@ -16,12 +16,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { RollingNumber } from '../ui/AnimatedNumber.js';
-import { money, categoryLabel, challengeLabel } from '../lib/format.js';
+import { money, domainLabel, difficultyLabel } from '../lib/format.js';
 
 export function AuctionControl() {
   const auction = useStore((s) => s.auction);
   const teams = useStore((s) => s.teams);
-  const challengeIndex = useStore((s) => s.challengeIndex);
+  const sequence = useStore((s) => s.sequence);
+  const preview = useStore((s) => s.premiumPreview);
   const game = useStore((s) => s.game);
   const symbol = useStore((s) => s.config.currencySymbol);
   const call = useStore((s) => s.call);
@@ -30,9 +31,9 @@ export function AuctionControl() {
   const [busy, setBusy] = useState(false);
   const [customBid, setCustomBid] = useState('');
 
-  const premiumChallenges = useMemo(
-    () => challengeIndex.filter((c) => c.marketType !== 'market'),
-    [challengeIndex],
+  const premiumSlots = useMemo(
+    () => sequence.filter((s) => s.kind === 'premium'),
+    [sequence],
   );
 
   const act = useCallback(
@@ -83,26 +84,37 @@ export function AuctionControl() {
           <span className="panel__title">Auction control</span>
         </div>
         <div className="panel__body">
-          {premiumChallenges.length === 0 ? (
-            <p className="muted">No premium challenges are loaded.</p>
+          {preview ? (
+            <>
+              <p className="muted" style={{ marginBottom: 'var(--sp-4)' }}>
+                {preview.isFinalPremium ? 'FINAL PREMIUM' : `Premium #${preview.premiumNumber}`} ·{' '}
+                {domainLabel(preview.domain)} · {difficultyLabel(preview.difficulty)} ·{' '}
+                {preview.timeLimit}s · opens at {money(preview.startingBid, symbol)}
+              </p>
+              <button
+                className="btn btn--premium btn--xl"
+                disabled={busy}
+                onClick={() => act('START_AUCTION', {})}
+              >
+                Start the auction
+              </button>
+            </>
+          ) : premiumSlots.length === 0 ? (
+            <p className="muted">The round has not been generated yet.</p>
           ) : (
             <>
               <p className="muted" style={{ marginBottom: 'var(--sp-4)' }}>
-                Open a premium challenge, then start its auction. The projector switches itself.
+                Advance to a premium slot to open its auction. The projector switches itself.
               </p>
               <div className="row wrap">
-                {premiumChallenges.map((challenge) => (
+                {premiumSlots.map((slot) => (
                   <button
-                    key={challenge.id}
-                    className={`btn ${challenge.marketType === 'final_premium' ? 'btn--premium' : ''}`}
-                    disabled={busy || challenge.state === 'complete'}
-                    onClick={async () => {
-                      await act('OPEN_CHALLENGE', { challengeId: challenge.id });
-                      await act('START_AUCTION', { challengeId: challenge.id });
-                    }}
+                    key={slot.index}
+                    className={`btn ${slot.isFinalPremium ? 'btn--premium' : ''}`}
+                    disabled={busy || slot.state === 'complete'}
+                    onClick={() => act('OPEN_SLOT', { slotIndex: slot.index })}
                   >
-                    {challengeLabel(challenge.index, challenge.marketType)}
-                    {challenge.state === 'complete' ? ' ✓' : ''}
+                    {slot.isFinalPremium ? 'FINAL PREMIUM' : `Block ${slot.blockNumber} premium`}
                   </button>
                 ))}
               </div>
@@ -115,14 +127,14 @@ export function AuctionControl() {
 
   const leader = auction.auction.currentLeaderTeamId;
   const closed = auction.auction.status === 'closed';
-  const isFinal = auction.challenge.marketType === 'final_premium';
+  const isFinal = auction.preview.isFinalPremium;
 
   return (
     <section className={`panel panel--flush auction-ctl ${isFinal ? 'panel--premium' : ''}`}>
       <div className="panel__head">
         <span className="panel__title">
-          {challengeLabel(auction.challenge.index, auction.challenge.marketType)} ·{' '}
-          {categoryLabel(auction.challenge.category)}
+          {isFinal ? 'FINAL PREMIUM' : `PREMIUM #${auction.preview.premiumNumber}`} ·{' '}
+          {domainLabel(auction.preview.domain)} · {difficultyLabel(auction.preview.difficulty)}
         </span>
         <span className={`badge ${closed ? '' : 'badge--premium'}`}>
           {auction.auction.status.replace(/_/g, ' ').toUpperCase()}

@@ -154,14 +154,14 @@ describe('reclaim walk (spec 15/16/17)', () => {
 
 describe('maximum two attempts (spec 17)', () => {
   it('allows attempt 1 and 2 but never 3', () => {
-    const state = emptyPremiumState('C04');
+    const state = emptyPremiumState('P1', 4);
     expect(canStartAnotherAttempt({ ...state, attemptNumber: 0 })).toBe(true);
     expect(canStartAnotherAttempt({ ...state, attemptNumber: 1 })).toBe(true);
     expect(canStartAnotherAttempt({ ...state, attemptNumber: 2 })).toBe(false);
   });
 
   it('never allows an attempt on a closed premium', () => {
-    const state = emptyPremiumState('C04');
+    const state = emptyPremiumState('P1', 4);
     expect(canStartAnotherAttempt({ ...state, attemptNumber: 1, stage: 'closed' })).toBe(false);
   });
 });

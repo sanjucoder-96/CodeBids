@@ -1,59 +1,75 @@
 /*
- * Design tokens - CSI Club / Code Market.
+ * Design tokens - CSI Club / Code Market (Round 3).
  *
- * The visual language is a night trading floor: near-black ground, a single
- * electric accent, money-green gains, loss-red drops, and gold reserved
- * exclusively for PREMIUM. Nothing is imported from a CDN (spec section 41).
+ * Direction: dark OLED trading floor meets esports broadcast. A near-black
+ * ground, one electric accent, money-green gains, outbid-red losses, and gold
+ * reserved exclusively for PREMIUM. Nothing is loaded from a CDN: the three
+ * typefaces are bundled as local woff2.
+ *
+ * Type roles are deliberately narrow so the "competitive" texture never turns
+ * into noise:
+ *   Russo One      - reserved for projector headline moments only
+ *   Chakra Petch   - labels, team names, badges, numbers-as-identity
+ *   Inter          - all running prose
+ *   JetBrains Mono - every figure that must line up in a column
  */
 
 :root {
   /* --- ground --------------------------------------------------------- */
-  --bg-void: #05070c;
-  --bg-base: #080b12;
-  --bg-panel: #0d111b;
-  --bg-panel-2: #121826;
-  --bg-raised: #172032;
-  --bg-input: #0a0e17;
-  --bg-hover: #1c2739;
+  --bg-void: #020617;
+  --bg-base: #060a14;
+  --bg-panel: #0b1120;
+  --bg-panel-2: #111a2e;
+  --bg-raised: #16213a;
+  --bg-input: #070c17;
+  --bg-hover: #1c2942;
 
   /* --- lines ---------------------------------------------------------- */
-  --line: #1e2739;
-  --line-strong: #2c3850;
-  --line-soft: #161d2b;
+  --line: #1e293b;
+  --line-strong: #334155;
+  --line-soft: #151f33;
 
   /* --- text ----------------------------------------------------------- */
-  --text: #e8edf7;
-  --text-strong: #ffffff;
-  --text-muted: #8b98b0;
-  --text-dim: #5c6880;
-  --text-faint: #3d4759;
+  --text: #e8eefc;
+  --text-strong: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --text-faint: #445068;
 
   /* --- brand ---------------------------------------------------------- */
   --accent: #3d8bff;
-  --accent-soft: #6ba5ff;
+  --accent-soft: #7cb0ff;
   --accent-dim: rgba(61, 139, 255, 0.16);
-  --accent-glow: rgba(61, 139, 255, 0.35);
+  --accent-glow: rgba(61, 139, 255, 0.38);
 
   /* --- semantic ------------------------------------------------------- */
-  --gain: #22d67f;
-  --gain-soft: #5ce6a3;
-  --gain-dim: rgba(34, 214, 127, 0.14);
-  --gain-glow: rgba(34, 214, 127, 0.35);
+  --gain: #16d97f;
+  --gain-soft: #5df0a8;
+  --gain-dim: rgba(22, 217, 127, 0.14);
+  --gain-glow: rgba(22, 217, 127, 0.36);
 
   --loss: #ff5470;
-  --loss-soft: #ff8296;
+  --loss-soft: #ff8fa1;
   --loss-dim: rgba(255, 84, 112, 0.14);
-  --loss-glow: rgba(255, 84, 112, 0.32);
+  --loss-glow: rgba(255, 84, 112, 0.34);
 
   --premium: #ffb930;
   --premium-soft: #ffd171;
   --premium-dim: rgba(255, 185, 48, 0.14);
-  --premium-glow: rgba(255, 185, 48, 0.4);
+  --premium-glow: rgba(255, 185, 48, 0.42);
 
   --warn: #ff9f43;
   --info: #46c8f5;
 
+  /* --- difficulty ------------------------------------------------------ */
+  --diff-easy: #22c55e;
+  --diff-medium: #38bdf8;
+  --diff-hard: #fb923c;
+  --diff-very-hard: #f43f5e;
+
   /* --- typography ------------------------------------------------------ */
+  --font-display: 'Russo One', 'Chakra Petch', system-ui, sans-serif;
+  --font-ui: 'Chakra Petch', 'Inter Variable', system-ui, sans-serif;
   --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'Cascadia Mono',
     'SF Mono', Menlo, Consolas, monospace;
@@ -74,7 +90,7 @@
   --tracking-wider: 0.16em;
   --tracking-widest: 0.28em;
 
-  /* --- space ----------------------------------------------------------- */
+  /* --- space (density 6/10: standard) ---------------------------------- */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -87,35 +103,37 @@
   --sp-16: 64px;
   --sp-20: 80px;
 
-  /* --- shape ----------------------------------------------------------- */
+  /* --- shape ------------------------------------------------------------ */
   --r-sm: 6px;
   --r-md: 10px;
   --r-lg: 14px;
   --r-xl: 20px;
   --r-pill: 999px;
 
-  /* --- depth ------------------------------------------------------------ */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
-  --shadow-glow: 0 0 0 1px var(--accent-dim), 0 0 32px var(--accent-glow);
+  /* --- depth ------------------------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
 
-  /* --- motion ------------------------------------------------------------ */
+  /* Glass surface used sparingly for elevated panels. */
+  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+
+  /* --- motion -------------------------------------------------------------- */
   --dur-fast: 140ms;
   --dur-base: 240ms;
   --dur-slow: 420ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
-  /* --- layout ------------------------------------------------------------ */
-  --header-h: 64px;
-  --max-w: 1240px;
+  /* --- layout ---------------------------------------------------------------- */
+  --header-h: 68px;
+  --max-w: 1280px;
 }
 
 /*
- * Projector scope: everything scales up for a room-sized screen (spec 24).
- * The projector overrides sizes rather than defining a second palette, so the
- * two surfaces can never drift apart.
+ * Projector scope: everything scales up for a room-sized screen. The projector
+ * overrides sizes rather than defining a second palette, so the two surfaces
+ * can never drift apart.
  */
 .projector-scope {
   --fs-base: 1.25rem;
@@ -128,7 +146,7 @@
   --fs-5xl: 9.5rem;
 }
 
-/* Respect the OS setting (spec section 46). */
+/* Respect the OS setting. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-fast: 1ms;

@@ -4,25 +4,24 @@ import {
   maxBid,
   nextBidAmount,
   resolveAdjustment,
-  resolveMarket,
+  resolveQuestion,
   resolvePremium,
-  marketReward,
-  marketPenalty,
+  questionReward,
+  questionPenalty,
   speedBonus,
   validateBid,
 } from './economy.js';
-import type { Challenge } from './types.js';
+import type { Question } from './types.js';
 
 const cfg = DEFAULT_CONFIG;
 
-const challenge = (over: Partial<Challenge> = {}): Challenge => ({
-  id: 'C01',
-  index: 1,
+const challenge = (over: Partial<Question> = {}): Question => ({
+  id: 'Q01',
+  kind: 'normal',
   title: 'Test',
-  category: 'logic',
+  domain: 'logic',
   type: 'mcq',
   difficulty: 'easy',
-  marketType: 'market',
   timeLimit: 120,
   question: { prompt: 'q' },
   evaluation: {},
@@ -136,72 +135,72 @@ describe('validateBid (server-authoritative, spec 8/13)', () => {
   });
 });
 
-describe('market economy', () => {
+describe('question economy', () => {
   it('scales reward by difficulty', () => {
-    expect(marketReward(cfg, challenge({ difficulty: 'easy' }), 1000)).toBe(200);
-    expect(marketReward(cfg, challenge({ difficulty: 'medium' }), 1000)).toBe(300);
-    expect(marketReward(cfg, challenge({ difficulty: 'hard' }), 1000)).toBe(400);
+    expect(questionReward(cfg, challenge({ difficulty: 'easy' }), 1000)).toBe(200);
+    expect(questionReward(cfg, challenge({ difficulty: 'medium' }), 1000)).toBe(300);
+    expect(questionReward(cfg, challenge({ difficulty: 'hard' }), 1000)).toBe(400);
   });
 
-  it('honours a per-challenge override', () => {
-    expect(marketReward(cfg, challenge({ rewardOverride: 777 }), 1000)).toBe(777);
-    expect(marketPenalty(cfg, challenge({ penaltyOverride: 42 }), 1000)).toBe(42);
+  it('honours a per-question override', () => {
+    expect(questionReward(cfg, challenge({ rewardOverride: 777 }), 1000)).toBe(777);
+    expect(questionPenalty(cfg, challenge({ penaltyOverride: 42 }), 1000)).toBe(42);
   });
 
   it('supports a percent-of-capital mode with clamping', () => {
     const pct = {
       ...cfg,
-      marketReward: { ...cfg.marketReward, mode: 'percent' as const, min: 50, max: 400 },
+      questionReward: { ...cfg.questionReward, mode: 'percent' as const, min: 50, max: 400 },
     };
-    expect(marketReward(pct, challenge(), 2000)).toBe(200);
-    expect(marketReward(pct, challenge(), 100)).toBe(50); // clamped to min
-    expect(marketReward(pct, challenge(), 100000)).toBe(400); // clamped to max
+    expect(questionReward(pct, challenge(), 2000)).toBe(200);
+    expect(questionReward(pct, challenge(), 100)).toBe(50); // clamped to min
+    expect(questionReward(pct, challenge(), 100000)).toBe(400); // clamped to max
   });
 
   it('supports a fixed mode', () => {
-    const fixed = { ...cfg, marketReward: { ...cfg.marketReward, mode: 'fixed' as const } };
-    expect(marketReward(fixed, challenge({ difficulty: 'hard' }), 1000)).toBe(200);
+    const fixed = { ...cfg, questionReward: { ...cfg.questionReward, mode: 'fixed' as const } };
+    expect(questionReward(fixed, challenge({ difficulty: 'hard' }), 1000)).toBe(200);
   });
 
   it('adds capital on a correct answer', () => {
-    const r = resolveMarket(cfg, challenge({ difficulty: 'medium' }), 1000, 'correct');
+    const r = resolveQuestion(cfg, challenge({ difficulty: 'medium' }), 1000, 'correct');
     expect(r.delta).toBe(300);
     expect(r.newCapital).toBe(1300);
   });
 
   it('subtracts capital on a wrong answer', () => {
-    const r = resolveMarket(cfg, challenge({ difficulty: 'medium' }), 1000, 'wrong');
+    const r = resolveQuestion(cfg, challenge({ difficulty: 'medium' }), 1000, 'wrong');
     expect(r.delta).toBe(-150);
     expect(r.newCapital).toBe(850);
   });
 
   it('treats timeout as wrong by default and as free when configured', () => {
-    expect(resolveMarket(cfg, challenge(), 1000, 'timeout').delta).toBe(-100);
-    const lenient = { ...cfg, marketTimeoutPenalised: false };
-    expect(resolveMarket(lenient, challenge(), 1000, 'timeout').delta).toBe(0);
+    expect(resolveQuestion(cfg, challenge(), 1000, 'timeout').delta).toBe(-100);
+    const lenient = { ...cfg, timeoutPenalised: false };
+    expect(resolveQuestion(lenient, challenge(), 1000, 'timeout').delta).toBe(0);
   });
 
   it('charges nothing for a skip', () => {
-    expect(resolveMarket(cfg, challenge(), 1000, 'skipped').delta).toBe(0);
+    expect(resolveQuestion(cfg, challenge(), 1000, 'skipped').delta).toBe(0);
   });
 
   it('honours the penalty kill switch', () => {
-    const free = { ...cfg, marketPenaltyEnabled: false };
-    expect(resolveMarket(free, challenge(), 1000, 'wrong').delta).toBe(0);
+    const free = { ...cfg, penaltyEnabled: false };
+    expect(resolveQuestion(free, challenge(), 1000, 'wrong').delta).toBe(0);
   });
 
   it('clamps losses at the capital floor', () => {
-    const r = resolveMarket(cfg, challenge({ difficulty: 'hard' }), 50, 'wrong');
+    const r = resolveQuestion(cfg, challenge({ difficulty: 'hard' }), 50, 'wrong');
     expect(r.newCapital).toBe(0);
     expect(r.delta).toBe(-50);
     expect(r.rawDelta).toBe(-200);
     expect(r.clamped).toBe(true);
   });
 
-  it('market losses may go below the protected reserve (reserve only caps bids)', () => {
-    const r = resolveMarket(cfg, challenge(), 600, 'wrong');
+  it('question losses may go below the protected reserve (reserve only caps bids)', () => {
+    const r = resolveQuestion(cfg, challenge(), 600, 'wrong');
     expect(r.newCapital).toBe(500);
-    const again = resolveMarket(cfg, challenge(), 500, 'wrong');
+    const again = resolveQuestion(cfg, challenge(), 500, 'wrong');
     expect(again.newCapital).toBe(400);
   });
 
@@ -256,10 +255,10 @@ describe('manual adjustment', () => {
 
 describe('config validation (spec 47)', () => {
   it('accepts a valid patch', () => {
-    const r = applyConfigPatch(cfg, { startingCapital: 1500, qualifiers: 12 });
+    const r = applyConfigPatch(cfg, { startingCapital: 1500, blocks: 6 });
     expect(r.ok).toBe(true);
     expect(r.config.startingCapital).toBe(1500);
-    expect(r.config.qualifiers).toBe(12);
+    expect(r.config.blocks).toBe(6);
   });
 
   it('rejects negative values and keeps the previous number', () => {
@@ -281,13 +280,19 @@ describe('config validation (spec 47)', () => {
   });
 
   it('deep-merges nested reward rules', () => {
-    const r = applyConfigPatch(cfg, { marketReward: { base: 500 } as never });
-    expect(r.config.marketReward.base).toBe(500);
-    expect(r.config.marketReward.mode).toBe(cfg.marketReward.mode);
+    const r = applyConfigPatch(cfg, { questionReward: { base: 500 } as never });
+    expect(r.config.questionReward.base).toBe(500);
+    expect(r.config.questionReward.mode).toBe(cfg.questionReward.mode);
   });
 
-  it('rejects a qualifier count below one', () => {
-    expect(applyConfigPatch(cfg, { qualifiers: 0 }).ok).toBe(false);
+  it('rejects a block count below one', () => {
+    expect(applyConfigPatch(cfg, { blocks: 0 }).ok).toBe(false);
+  });
+
+  it('rejects a non-positive solve time', () => {
+    const r = applyConfigPatch(cfg, { difficultyTimes: { ...cfg.difficultyTimes, hard: 0 } });
+    expect(r.ok).toBe(false);
+    expect(r.config.difficultyTimes.hard).toBe(120);
   });
 });
 

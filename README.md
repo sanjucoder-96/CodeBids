@@ -1,8 +1,9 @@
 # CSI CLUB — CODE MARKET
 
-**Round 2 competition platform.** A live coding *market*: teams hold capital, answer technical
-challenges, bid real money in live physical auctions for premium questions, and can lose it all on a
-wrong answer. Built to run on a **private LAN with the internet physically disconnected**.
+**Round 3 competition platform — the finale.** A live coding *market*: teams hold capital, answer
+technical questions, bid real money in live physical auctions for premium questions, and can lose it
+all on a wrong answer. The top three teams are the winners; nobody qualifies onward. Built to run on
+a **private LAN with the internet physically disconnected**.
 
 ```
                         PRIVATE LOCAL LAN
@@ -32,21 +33,22 @@ CLIENT ACTION → SERVER VALIDATION → DATABASE WRITE → REAL-TIME BROADCAST �
 ## Contents
 
 1. [Quick start](#quick-start)
-2. [Architecture](#architecture)
-3. [How the round works](#how-the-round-works)
-4. [Development setup](#development-setup)
-5. [Build & commands](#build--commands)
-6. [Event-day setup](#event-day-setup)
-7. [Running the event](#running-the-event)
-8. [Auction operation](#auction-operation)
-9. [Reclaim operation](#reclaim-operation)
-10. [Configuration](#configuration)
-11. [Simulation & rehearsal](#simulation--rehearsal)
-12. [Results & export](#results--export)
-13. [Emergency recovery](#emergency-recovery)
-14. [Troubleshooting](#troubleshooting)
-15. [Testing](#testing)
-16. [Known limitations](#known-limitations)
+2. [What each machine needs](#what-each-machine-needs)
+3. [Architecture](#architecture)
+4. [How the round works](#how-the-round-works)
+5. [Development setup](#development-setup)
+6. [Build & commands](#build--commands)
+7. [Event-day setup](#event-day-setup)
+8. [Running the event](#running-the-event)
+9. [Auction operation](#auction-operation)
+10. [Reclaim operation](#reclaim-operation)
+11. [Configuration](#configuration)
+12. [Simulation & rehearsal](#simulation--rehearsal)
+13. [Results & export](#results--export)
+14. [Emergency recovery](#emergency-recovery)
+15. [Troubleshooting](#troubleshooting)
+16. [Testing](#testing)
+17. [Known limitations](#known-limitations)
 
 ---
 
@@ -63,7 +65,7 @@ The console prints everything you need:
 
 ```
 ================================================================
-   CSI CLUB  -  CODE MARKET   |   ROUND 2   |   OFFLINE LAN MODE
+   CSI CLUB  -  CODE MARKET   |   ROUND 3   |   OFFLINE LAN MODE
 ================================================================
 
    PARTICIPANTS   http://192.168.0.106:4400
@@ -72,6 +74,55 @@ The console prints everything you need:
 
    OPERATOR PASSCODE   4821
 ```
+
+---
+
+## What each machine needs
+
+**Only one machine runs anything.** There is nothing to install on participant laptops.
+
+| Machine | Needs | Does not need |
+|---|---|---|
+| **Organizer laptop** (one) | Node.js 20.11+ (tested on 24), this repository | Internet, database server, Docker, Python |
+| **Participant laptops** (any number) | A modern browser and the event Wi-Fi | Node, npm, this repository, any install, any account |
+| **Projector machine** | A browser (can be the organizer laptop itself) | Anything else |
+
+Participants open a URL. The organizer laptop serves the whole interface — HTML, JavaScript, CSS and
+all four fonts — from its own disk. Nothing is fetched from the internet at any point; `npm run
+offline:check` asserts this against the built output.
+
+**Browsers.** The bundle targets ES2020, so anything from roughly 2020 onward works: Chrome/Edge 80+,
+Firefox 75+, Safari 14+. Chrome, Edge and Firefox are all fine. There is no service worker, no
+install prompt and no PWA — a refresh always re-reads the current state from the server.
+
+**Python, C++ and Java are not required.** The optional code runner is off by default and no question
+in the shipped pool needs it.
+
+### Copying the project to the organizer laptop
+
+If that laptop has internet once, before the event:
+
+```bash
+npm install && npm run build
+```
+
+If it will never have internet, prepare the folder on a machine that does, then copy across:
+
+```
+package.json
+node_modules/            (~31 MB of runtime packages once dev dependencies are pruned)
+packages/server/dist/
+packages/client/dist/
+```
+
+and run `node packages/server/dist/index.js`. That is enough; no install step is needed on the target
+machine.
+
+> **Match the Node major version.** `better-sqlite3` is a native module compiled against one Node
+> ABI. A `node_modules` prepared on Node 24 will not load on Node 20, and fails with
+> `NODE_MODULE_VERSION`. Either use the same Node major version on both machines, or run
+> `npm rebuild better-sqlite3` on the target (which needs a C++ toolchain, so matching versions is
+> much easier). This is the only real portability trap in the project.
 
 ---
 
@@ -84,9 +135,10 @@ software to install on 40 student laptops.
 packages/
 ├── shared/     Pure domain logic shared by server and clients
 │   ├── economy.ts       capital, protected reserve, bid validation, settlement
-│   ├── evaluation.ts    the generic challenge engine (all question types)
+│   ├── evaluation.ts    the generic answer engine (all question types)
+│   ├── sequence.ts      the seeded random draw that builds the round
 │   ├── reclaim.ts       the reclaim ladder and its state transitions
-│   ├── leaderboard.ts   ranking + Round 3 qualification
+│   ├── leaderboard.ts   ranking, podium placement, blackout redaction
 │   ├── config.ts        every tunable number in the game
 │   └── protocol.ts      the WebSocket contract
 │
@@ -99,7 +151,7 @@ packages/
 │   ├── net/routes.ts        auth, export, backup, health
 │   ├── repo/                every SQL statement in the application
 │   ├── db/schema.sql        the event database
-│   └── content/challenges.ts the fixed 12-question pool
+│   └── content/pool.ts       the question pool the round is drawn from
 │
 └── client/     One React app, three surfaces
     ├── participant/   team client
@@ -128,17 +180,34 @@ Small JSON envelopes: `{ t, d, seq, ts }`.
 
 ## How the round works
 
-### The fixed sequence (never changes)
+### The generated sequence
 
-| # | Type | # | Type | # | Type |
-|---|------|---|------|---|------|
-| 01 | Market | 05 | Market | 09 | Market |
-| 02 | Market | 06 | Market | 10 | **Premium** |
-| 03 | Market | 07 | **Premium** | 11 | Market |
-| 04 | **Premium** | 08 | Market | 12 | **FINAL PREMIUM** |
+The round is built from **blocks**. Every block is **three normal questions, then one premium**:
 
-8 Market · 3 Premium · 1 Final Premium. There are **no extra questions** for failed premiums,
-reclaims, ties, or waiting teams. A reclaim re-uses the **same** premium question.
+```
+BLOCK 1   Q1 → Q2 → Q3 → PREMIUM → strategy phase
+BLOCK 2   Q1 → Q2 → Q3 → PREMIUM → strategy phase
+BLOCK 3   Q1 → Q2 → Q3 → PREMIUM → strategy phase
+BLOCK 4   Q1 → Q2 → Q3 → FINAL PREMIUM
+```
+
+**The three questions are drawn at random.** Each one is picked independently from the whole pool
+across all four difficulties — Easy, Medium, Hard and Very Hard. There is deliberately **no fixed
+difficulty progression**: a block can open Hard and end Easy. Any ordering you see is the draw, not a
+rule.
+
+The draw is made by the server from a **seed stored in the database**, so:
+
+- the running order is identical for every surface and every team,
+- a reconnect or a server restart never re-rolls it,
+- the same seed reproduces the same round exactly, which is what makes a rehearsal meaningful.
+
+A normal question is never repeated inside a round, and the draw avoids reusing anything inside a
+configurable no-repeat window. Block count and questions per block are configurable; the defaults are
+four blocks of three.
+
+There are **no extra questions** for failed premiums, reclaims, ties, or waiting teams. A reclaim
+re-uses the **same** premium question.
 
 ### Capital and the protected reserve
 
@@ -158,16 +227,30 @@ This is *not* a flat ₹500 bid cap:
 
 A rich team can bid higher — and has more at risk. All bid validation happens on the server.
 
-### Market challenges
+### Normal questions
 
 ```
-Challenge opens → team enters the printed KEY → team sees category, difficulty,
-reward and penalty → team decides JOIN or SIT OUT → question is revealed and the
+Intro card (domain · difficulty · solve time) → question opens → team enters the
+printed KEY → team decides JOIN or SIT OUT → question is revealed and that team's
 clock starts → submit → server evaluates → capital changes → leaderboard updates
 ```
 
-The risk decision is made **before** the question is revealed. Sitting out costs nothing. Market
-results settle automatically — **volunteers never report a normal answer**.
+The risk decision is made **before** the question is revealed. Sitting out costs nothing. Results
+settle automatically — **volunteers never report a normal answer**.
+
+Each question carries its own solve time, taken from its difficulty:
+
+| Difficulty | Solve time |
+|------------|-----------|
+| Easy | 60 s |
+| Medium | 90 s |
+| Hard | 120 s |
+| Very Hard | 150 s |
+
+These are configuration, not constants in the interface — change them in the Config tab and every
+surface follows. **The clock belongs to the team, not to the round:** it starts when that team joins,
+and the server sends the deadline it is enforcing, so a team that reconnects mid-question resumes
+with the time it actually has left.
 
 ### Premium challenges
 
@@ -182,6 +265,26 @@ Auction (physical paddles) → SOLD → winner authorised over the LAN → attem
 The winning bid **is** the risk amount. Correct → `capital + bid`. Wrong → `capital − bid`.
 
 **Maximum two attempts, ever.** There is never a second auction and never a third attempt.
+
+The **whole premium** — announcement, auction, first attempt, reclaim, second attempt — runs inside a
+single **seven-minute window** held by the server. When the window lapses the premium closes wherever
+it had got to, so one slow auction cannot eat the schedule.
+
+### The strategy phase
+
+Every premium is followed by a **40-second strategy phase** before the next block opens. It is a real
+game state, not a pause: teams see their capital, their bidding power, their record so far and a
+countdown, and the projector shows the same window to the hall. Nothing is at stake during it.
+
+### The final stretch
+
+For the **last four normal questions** the global leaderboard is **sealed**. The projector shows a
+blackout card instead of the board, and each team can see only its own capital — not its rank, and
+not anyone else's. The organizer console keeps the full live board throughout, because the operator
+still has to run the event.
+
+Standings return at the final reveal, which is a podium ceremony: a short countdown, then third,
+second and first in turn. **The top three are the winners.** There is no qualification to anything.
 
 ---
 
@@ -289,15 +392,21 @@ A team enters its join code once; the session persists across refreshes and serv
 
 ## Running the event
 
-The whole round is driven from the **Control** tab.
+The whole round is driven from the **Control** tab. One large button always names the next thing to
+do — *Open B1 Q1*, *Open the question*, *Close the question*, *Start the auction*, *Start the strategy
+phase*, *Reveal the podium* — so the operator never has to work out which control applies.
 
-1. **Start round.**
-2. Click a challenge in the round sequence strip to open it.
-   - For a **market** challenge, read its access key aloud (shown on the tile).
-   - For a **premium** challenge, opening it also starts the auction.
-3. Market challenges settle themselves. Watch **Live events** for anything needing attention.
-4. **Close challenge** when the room is done — anyone still mid-attempt is recorded as a timeout.
-5. Repeat through challenge 12, then **Complete round**.
+1. **Start round.** The server draws the sequence and shows it as a strip of slots.
+2. Press the primary button, or click any slot in the strip to jump to it.
+   - A **normal** question shows an intro card first; read its access key aloud (shown on the tile).
+   - A **premium** shows its announcement, then you start the auction when the room is ready.
+3. Normal questions settle themselves. Watch **Live events** for anything needing attention.
+4. **Close the question** when the room is done — anyone still mid-attempt is recorded as a timeout.
+5. After each premium, run the **40-second strategy phase**, then move to the next block.
+6. Work through the strip, then **Complete round** and **Reveal the podium**.
+
+The strip marks the last four normal questions **SEALED**: from there the projector and the teams
+lose the global board while your console keeps it.
 
 **Pause** freezes the round safely at any time (participants see a calm "paused" screen and nothing
 is lost). **Resume** returns to the previous phase.
@@ -365,20 +474,30 @@ Nothing in the UI hard-codes an economy value.
 | Starting capital | ₹1000 | |
 | Protected reserve | ₹500 | Max bid = capital − reserve |
 | Capital floor | ₹0 | Capital can never go below this |
-| Market reward | 200 × difficulty | fixed / by difficulty / % of capital |
-| Market penalty | 100 × difficulty | can be disabled entirely |
+| Question reward | 200 × difficulty | fixed / by difficulty / % of capital |
+| Question penalty | 100 × difficulty | can be disabled entirely |
 | Premium opening bid | ₹300 | increment ₹100 |
 | Final premium opening bid | ₹500 | increment ₹100 |
 | Reclaim window | 5 s | auto-decline on expiry |
-| Qualifiers | 10 | Round 3 cut-off |
+| Blocks | 4 | each is N questions then a premium |
+| Questions per block | 3 | drawn at random |
+| No-repeat window | 6 | questions before one may recur |
+| Solve time by difficulty | 60 / 90 / 120 / 150 s | easy / medium / hard / very hard |
+| Intro card | 8 s | the beat before a question opens |
+| Premium window | 420 s | the whole premium, end to end |
+| Premium solve time | 150 s | one attempt |
+| Strategy phase | 40 s | after every premium |
+| Blackout last N questions | 4 | leaderboard sealed for the finale |
+| Podium places | 3 | the winners |
 
 Invalid values are rejected by the server and the previous value is kept, so a typo mid-event cannot
 break the economy.
 
-> **Ties on the qualification line.** Ranking is competition-style: teams on equal capital share a
-> rank. If several teams tie *on* the line, all of them qualify, so the qualified count can exceed
-> the configured number. This is intentional and fair; resolve it with a tie-break of your choosing
-> if Round 3 has a hard capacity.
+> **Ties on the podium.** Ranking is competition-style: teams on equal capital share a rank. A tied
+> group takes a place only if the whole group fits inside the podium — two teams level at the top are
+> both first and third place still exists, but four teams level at the top cannot fill three places,
+> so none of them is placed. At the start of the round every team is level, which is why nobody wears
+> a medal until the field separates. Resolve a genuine tie with a tie-break of your choosing.
 
 ---
 
@@ -389,12 +508,12 @@ the audit log.
 
 | Scenario | Use it to rehearse |
 |---|---|
-| Market round | Everyone answering a market challenge |
+| Question round | Everyone answering the open normal question |
 | Premium auction | A full auction with outbids, a winner and an attempt |
 | Forced reclaim chain | Winner fails → decline → accept (the reclaim screens) |
 | **Rank climb** | Drives last place to first in steps — *the leaderboard animation test* |
 | Chaos mode | Rapid overlapping capital changes (layout-animation stress test) |
-| Full round | End-to-end dry run of all 12 challenges |
+| Full round | End-to-end dry run of the whole generated sequence |
 
 Run these on the projector before the event. **Reset round** before the teams arrive.
 
@@ -406,9 +525,9 @@ Run these on the projector before the event. **Reset round** before the teams ar
 
 - **CSV** — exactly the specified columns: Rank, Team ID, Team, Starting Capital, Final Capital,
   Normal Attempted, Normal Correct, Premium Wins, Premium Attempts, Premium Correct, Premium Wrong,
-  Total Profit/Loss, Qualification Status.
-- **JSON** — full archive: config, results, teams, challenges, auctions, every bid, every attempt,
-  every transaction, and the complete audit log.
+  Total Profit/Loss, Podium Place.
+- **JSON** — full archive: config, results, teams, the generated sequence and its seed, auctions,
+  every bid, every attempt, every transaction, and the complete audit log.
 - **Audit TXT** — human-readable dispute-resolution trail:
 
 ```
@@ -432,8 +551,8 @@ The database is the source of truth. **Everything survives a restart.**
 npm start
 ```
 
-State resumes exactly: phase, open challenge, auction, an in-flight reclaim offer, every capital
-balance. Participants reconnect automatically (they never need to re-enter their join code).
+State resumes exactly: phase, the generated sequence, the open question, the auction, an in-flight
+reclaim offer, each team's own solve clock, and every capital balance. Participants reconnect automatically (they never need to re-enter their join code).
 
 ### A participant laptop froze / was closed
 
@@ -499,16 +618,16 @@ change is timestamped.
 ## Testing
 
 ```bash
-npm test            # 314 tests
+npm test            # 359 tests
 npm run verify      # typecheck + lint + test + build
 npm run offline:check
 ```
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `shared` | 99 | Capital, protected reserve, bid validation, every question type, reclaim ladder, ranking, qualification, config validation |
-| `server` | 130 | Market flow, auctions, premium settlement, the full reclaim walk, two-attempt limit, duplicate submission, timeouts, persistence across restart, reconnect, auth isolation, simulation, export, **and a full 12-challenge rehearsal over real WebSockets with 12 clients** |
-| `client` | 85 | Store reducer against real protocol frames, socket reconnect and sequence-gap resync, screen derivation for every phase, leaderboard stable keys / no duplicate rows / qualification divider / rank movement |
+| `shared` | 141 | Capital, protected reserve, bid validation, every question type, reclaim ladder, ranking, podium placement and ties, **the random sequence draw and its reproducibility**, leaderboard redaction, config validation |
+| `server` | 121 | Question flow, per-team solve clocks, auctions, premium settlement, the full reclaim walk, two-attempt limit, duplicate submission, timeouts, the strategy phase, the leaderboard blackout, persistence across restart, schema versioning, static asset serving, reconnect, auth isolation, simulation, export, **and a full end-to-end rehearsal over real WebSockets with 12 clients** |
+| `client` | 97 | Store reducer against real protocol frames, socket reconnect and sequence-gap resync, screen derivation for every phase, countdown urgency, podium plinth sizing, leaderboard stable keys / no duplicate rows / podium marking / rank movement |
 
 Notable invariants under test: the ledger reconciles (every team's capital equals the sum of its
 transactions, and every running balance is consistent), no team ever drops below the capital floor,
@@ -523,17 +642,22 @@ participant socket.
 submitted Python/C++/Java using the toolchain on the organizer machine. It enforces a hard timeout,
 an output cap, a source-size cap, and a per-run temp directory — but it provides **no OS-level
 sandbox** (no container, no seccomp). For a supervised in-person round on a private LAN that is an
-acceptable trade-off, but it is why it defaults to off and why the shipped 12-question pool needs no
+acceptable trade-off, but it is why it defaults to off and why the shipped question pool needs no
 execution at all. Enable it only if you understand this.
 
-**Ties can produce more than N qualifiers.** See [Configuration](#configuration).
+**A tie can leave a podium place empty.** A tied group takes a place only if the whole group fits
+inside the podium. See [Configuration](#configuration).
 
 **Sound is synthesised, not sampled.** All cues are generated with the Web Audio API rather than
 bundled audio files — zero assets, zero downloads, fully offline. They are deliberately restrained;
 sound is never required to understand the UI, and the projector mutes itself by default.
 
-**Physical paddles are the bidding mechanism.** By design (spec §11): no ESP32, no buttons, no
-batteries. The software records and displays; the room does the bidding.
+**Physical paddles are the bidding mechanism.** By design: no ESP32, no buttons, no batteries. The
+software records and displays; the room does the bidding.
+
+**The question pool bounds the round.** The generated sequence needs enough normal questions for
+`blocks × questionsPerBlock` and one premium per block. Raising either in Config without adding
+questions is refused with an explicit message rather than silently repeating a question.
 
 ---
 

@@ -52,7 +52,7 @@ export function EventLog({ token }: { token: string }) {
       .filter((entry) => (active && 'match' in active && active.match ? active.match.test(entry.action) : true))
       .filter((entry) =>
         needle
-          ? `${entry.action} ${entry.teamId ?? ''} ${entry.challengeId ?? ''} ${JSON.stringify(entry.metadata)}`
+          ? `${entry.action} ${entry.teamId ?? ''} ${entry.questionId ?? ''} ${JSON.stringify(entry.metadata)}`
               .toLowerCase()
               .includes(needle)
           : true,
@@ -108,7 +108,7 @@ export function EventLog({ token }: { token: string }) {
                 <span className="log__time mono">{timeOfDay(entry.timestamp)}</span>
                 <span className="log__team mono">{entry.teamId ?? '—'}</span>
                 <span className="log__action">{entry.action}</span>
-                <span className="log__challenge mono dim">{entry.challengeId ?? ''}</span>
+                <span className="log__challenge mono dim">{entry.questionId ?? ''}</span>
                 <span className="log__meta dim">{summarise(entry.metadata)}</span>
               </motion.div>
             ))}

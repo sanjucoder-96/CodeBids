@@ -1,13 +1,20 @@
 /**
- * Screen derivation (spec section 21 / 36).
+ * Screen derivation for the Round 3 state machine.
  *
- * A reconnecting team must land on the correct screen purely from server state.
- * These tests drive the store and assert which screen `useScreen` selects.
+ * A reconnecting team must land on the correct screen purely from server state,
+ * for every phase - including the new intro, strategy and podium beats.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, cleanup, act } from '@testing-library/react';
-import { DEFAULT_CONFIG, type GameState, type PremiumState, type TeamView } from '@code-market/shared';
+import {
+  DEFAULT_CONFIG,
+  type GamePhase,
+  type GameState,
+  type PremiumState,
+  type QuestionPublic,
+  type TeamView,
+} from '@code-market/shared';
 import { useStore } from '../lib/store.js';
 import { useScreen } from './ParticipantApp.js';
 import { surfaceFromPath } from '../App.js';
@@ -27,10 +34,15 @@ vi.mock('../lib/sound.js', () => ({
 afterEach(cleanup);
 
 const game = (over: Partial<GameState> = {}): GameState => ({
-  phase: 'lobby',
+  phase: 'idle',
   resumePhase: null,
-  currentChallengeId: null,
+  slotIndex: 1,
+  currentQuestionId: 'N01',
   currentAuctionId: null,
+  blockNumber: 1,
+  totalBlocks: 4,
+  totalSlots: 16,
+  finalStretch: false,
   timer: { endsAt: null, duration: null, label: null },
   serverNow: Date.now(),
   startedAt: 1,
@@ -43,9 +55,11 @@ const me = (over: Partial<TeamView> = {}): TeamView => ({
   capital: 1000,
   maxBid: 500,
   rank: 1,
+  podium: 1,
   totalTeams: 12,
-  qualified: true,
-  challengeState: 'locked',
+  leaderboardHidden: false,
+  questionState: 'locked',
+  questionDeadline: null,
   premiumUnlocked: false,
   premiumRisk: null,
   lastResult: null,
@@ -53,10 +67,10 @@ const me = (over: Partial<TeamView> = {}): TeamView => ({
   inAuction: false,
   myHighestBid: null,
   stats: {
-    marketAttempted: 0,
-    marketCorrect: 0,
-    marketWrong: 0,
-    marketSkipped: 0,
+    attempted: 0,
+    correct: 0,
+    wrong: 0,
+    skipped: 0,
     premiumWins: 0,
     premiumAttempts: 0,
     premiumCorrect: 0,
@@ -68,7 +82,8 @@ const me = (over: Partial<TeamView> = {}): TeamView => ({
 });
 
 const premium = (over: Partial<PremiumState> = {}): PremiumState => ({
-  challengeId: 'C04',
+  questionId: 'P1',
+  slotIndex: 4,
   stage: 'auction',
   auctionId: 1,
   ladder: [],
@@ -80,27 +95,27 @@ const premium = (over: Partial<PremiumState> = {}): PremiumState => ({
   offerDeadline: null,
   failedTeamId: null,
   outcome: null,
+  windowEndsAt: null,
   ...over,
 });
 
-const marketChallenge = {
-  id: 'C01',
-  index: 1,
-  title: 'Opening Bell',
-  category: 'logic' as const,
-  type: 'output' as const,
-  difficulty: 'easy' as const,
-  marketType: 'market' as const,
-  timeLimit: 90,
+const question: QuestionPublic = {
+  id: 'N01',
+  kind: 'normal',
+  title: 'Slice of Life',
+  domain: 'output_prediction',
+  type: 'output',
+  difficulty: 'easy',
+  timeLimit: 60,
+  slotIndex: 1,
+  blockNumber: 1,
+  positionInBlock: 1,
   revealed: false,
   question: { prompt: '' },
   reward: 200,
   penalty: 100,
 };
 
-const premiumChallenge = { ...marketChallenge, id: 'C04', index: 4, marketType: 'premium' as const };
-
-/** Partial store state; `useScreen` only reads game / me / challenge / premium. */
 type PartialState = Record<string, unknown>;
 
 function screenFor(state: PartialState): string {
@@ -114,54 +129,66 @@ beforeEach(() => {
   useStore.setState({
     config: DEFAULT_CONFIG,
     game: null,
-    challenge: null,
+    question: null,
     premium: null,
+    premiumPreview: null,
     me: null,
     auction: null,
+    leaderboardHidden: false,
   });
 });
 
 describe('useScreen', () => {
   it('waits before the round starts', () => {
     expect(screenFor({ game: null, me: null })).toBe('waiting');
-    expect(screenFor({ game: game({ phase: 'lobby' }), me: me() })).toBe('waiting');
+    expect(screenFor({ game: game({ phase: 'idle' }), me: me() })).toBe('waiting');
   });
 
-  it('shows the market screen when a market challenge is open', () => {
+  it('shows the intro card during question_intro', () => {
     expect(
-      screenFor({
-        game: game({ phase: 'market', currentChallengeId: 'C01' }),
-        challenge: marketChallenge,
-        me: me({ challengeState: 'locked' }),
-      }),
-    ).toBe('market');
+      screenFor({ game: game({ phase: 'question_intro' }), question, me: me() }),
+    ).toBe('question_intro');
   });
 
-  it('shows the challenge screen once the team has joined', () => {
+  it('shows the decision screen once the question opens', () => {
     expect(
       screenFor({
-        game: game({ phase: 'market', currentChallengeId: 'C01' }),
-        challenge: marketChallenge,
-        me: me({ challengeState: 'in_progress' }),
+        game: game({ phase: 'question_active' }),
+        question,
+        me: me({ questionState: 'locked' }),
       }),
-    ).toBe('challenge');
+    ).toBe('question');
   });
 
-  it('shows the result screen after submitting', () => {
+  it('shows the solving screen once the team has joined', () => {
     expect(
       screenFor({
-        game: game({ phase: 'market', currentChallengeId: 'C01' }),
-        challenge: marketChallenge,
-        me: me({ challengeState: 'submitted' }),
+        game: game({ phase: 'question_active' }),
+        question,
+        me: me({ questionState: 'in_progress' }),
       }),
+    ).toBe('solving');
+  });
+
+  it('shows the result after submitting or skipping', () => {
+    const base = { game: game({ phase: 'question_active' }), question };
+    expect(screenFor({ ...base, me: me({ questionState: 'submitted' }) })).toBe('result');
+    expect(screenFor({ ...base, me: me({ questionState: 'skipped' }) })).toBe('result');
+    expect(
+      screenFor({ game: game({ phase: 'question_result' }), question, me: me() }),
     ).toBe('result');
   });
 
-  it('shows the auction screen during a premium auction', () => {
+  it('shows the premium preview during premium_intro', () => {
+    expect(
+      screenFor({ game: game({ phase: 'premium_intro' }), premium: premium(), me: me() }),
+    ).toBe('premium_intro');
+  });
+
+  it('shows the auction while bidding is open', () => {
     expect(
       screenFor({
-        game: game({ phase: 'auction', currentChallengeId: 'C04', currentAuctionId: 1 }),
-        challenge: premiumChallenge,
+        game: game({ phase: 'auction_active', currentAuctionId: 1 }),
         premium: premium({ stage: 'auction' }),
         me: me(),
       }),
@@ -171,8 +198,7 @@ describe('useScreen', () => {
   it('moves the winner to the premium screen the moment the hammer falls', () => {
     expect(
       screenFor({
-        game: game({ phase: 'auction', currentChallengeId: 'C04', currentAuctionId: 1 }),
-        challenge: premiumChallenge,
+        game: game({ phase: 'premium_authorized' }),
         premium: premium({ stage: 'sold', activeTeamId: 'T01', activeRisk: 700 }),
         me: me({ teamId: 'T01', premiumUnlocked: true, premiumRisk: 700 }),
       }),
@@ -182,9 +208,8 @@ describe('useScreen', () => {
   it('leaves losing bidders on the auction screen', () => {
     expect(
       screenFor({
-        game: game({ phase: 'auction', currentChallengeId: 'C04', currentAuctionId: 1 }),
-        challenge: premiumChallenge,
-        premium: premium({ stage: 'sold', activeTeamId: 'T09', activeRisk: 700 }),
+        game: game({ phase: 'premium_authorized' }),
+        premium: premium({ stage: 'sold', activeTeamId: 'T09' }),
         me: me({ teamId: 'T01' }),
       }),
     ).toBe('auction');
@@ -192,23 +217,25 @@ describe('useScreen', () => {
 
   it('shows the question to the authorised premium attempter only', () => {
     const state = {
-      game: game({ phase: 'premium_attempt', currentChallengeId: 'C04' }),
-      challenge: { ...premiumChallenge, revealed: true },
-      premium: premium({ stage: 'attempt_1', activeTeamId: 'T01', activeRisk: 700, attemptNumber: 1 }),
+      game: game({ phase: 'premium_solving' }),
+      question: { ...question, id: 'P1', kind: 'premium' as const, revealed: true },
+      premium: premium({ stage: 'attempt_1', activeTeamId: 'T01', attemptNumber: 1 }),
     };
-    expect(screenFor({ ...state, me: me({ teamId: 'T01', challengeState: 'in_progress' }) })).toBe('challenge');
+    expect(screenFor({ ...state, me: me({ teamId: 'T01', questionState: 'in_progress' }) })).toBe(
+      'solving',
+    );
     expect(screenFor({ ...state, me: me({ teamId: 'T05' }) })).toBe('waiting');
   });
 
   it('a reclaim offer always wins over any other screen', () => {
     expect(
       screenFor({
-        game: game({ phase: 'premium_reclaim', currentChallengeId: 'C04' }),
-        challenge: premiumChallenge,
+        game: game({ phase: 'question_active' }),
+        question,
         premium: premium({ stage: 'reclaim_offer', offerTeamId: 'T01', offerRisk: 500 }),
         me: me({
           teamId: 'T01',
-          reclaimOffer: { challengeId: 'C04', risk: 500, deadline: Date.now() + 5000 },
+          reclaimOffer: { questionId: 'P1', risk: 500, deadline: Date.now() + 5000 },
         }),
       }),
     ).toBe('reclaim');
@@ -217,40 +244,47 @@ describe('useScreen', () => {
   it('other teams watch and wait during a reclaim', () => {
     expect(
       screenFor({
-        game: game({ phase: 'premium_reclaim', currentChallengeId: 'C04' }),
-        challenge: premiumChallenge,
-        premium: premium({ stage: 'reclaim_offer', offerTeamId: 'T09', offerRisk: 500 }),
+        game: game({ phase: 'reclaim' }),
+        premium: premium({ stage: 'reclaim_offer', offerTeamId: 'T09' }),
         me: me({ teamId: 'T01' }),
       }),
     ).toBe('waiting');
   });
 
-  it('holds a ceremonial screen before the final auction opens', () => {
-    expect(
-      screenFor({
-        game: game({ phase: 'final', currentChallengeId: 'C12', currentAuctionId: null }),
-        challenge: { ...premiumChallenge, id: 'C12', index: 12, marketType: 'final_premium' },
-        me: me(),
-      }),
-    ).toBe('waiting');
+  it('shows the strategy phase between blocks', () => {
+    expect(screenFor({ game: game({ phase: 'strategy_phase' }), me: me() })).toBe('strategy');
   });
 
-  it('shows the final standings when the round completes', () => {
-    expect(screenFor({ game: game({ phase: 'complete' }), me: me() })).toBe('final');
-  });
-
-  it('shows the result screen while results settle', () => {
-    expect(screenFor({ game: game({ phase: 'result' }), me: me() })).toBe('result');
+  it('shows the final screen once the round completes', () => {
+    expect(screenFor({ game: game({ phase: 'final_results' }), me: me() })).toBe('final');
+    expect(screenFor({ game: game({ phase: 'completed' }), me: me() })).toBe('final');
   });
 
   it('a paused round parks the team on a waiting screen', () => {
-    expect(
-      screenFor({
-        game: game({ phase: 'paused', currentChallengeId: 'C01' }),
-        challenge: marketChallenge,
-        me: me(),
-      }),
-    ).toBe('waiting');
+    expect(screenFor({ game: game({ phase: 'paused' }), question, me: me() })).toBe('waiting');
+  });
+
+  it('covers every phase without falling through to an unhandled state', () => {
+    const phases: GamePhase[] = [
+      'idle',
+      'question_intro',
+      'question_active',
+      'question_result',
+      'premium_intro',
+      'auction_active',
+      'premium_authorized',
+      'premium_solving',
+      'premium_result',
+      'reclaim',
+      'strategy_phase',
+      'final_results',
+      'completed',
+      'paused',
+    ];
+    for (const phase of phases) {
+      const screen = screenFor({ game: game({ phase }), question, premium: premium(), me: me() });
+      expect(screen, `phase ${phase}`).toBeTruthy();
+    }
   });
 });
 

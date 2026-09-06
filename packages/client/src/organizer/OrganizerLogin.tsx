@@ -15,6 +15,7 @@ export function OrganizerLogin({ onLogin }: { onLogin: (token: string) => void }
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<ConnectionInfo | null>(null);
   const authError = useStore((s) => (s.authFailed ? s.error : null));
+  const round = useStore((s) => s.config.roundNumber);
 
   useEffect(() => {
     if (authError) setError(`${authError}. Sign in again.`);
@@ -64,7 +65,7 @@ export function OrganizerLogin({ onLogin }: { onLogin: (token: string) => void }
         <div className="login__brand">
           <div className="eyebrow">CODE MARKET</div>
           <h1 className="login__title">OPERATOR CONSOLE</h1>
-          <div className="login__round">Round 2 event control</div>
+          <div className="login__round">Round {round} event control</div>
         </div>
 
         <form onSubmit={submit} className="stack">

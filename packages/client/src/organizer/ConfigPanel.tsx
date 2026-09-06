@@ -31,19 +31,25 @@ const NUMBER_FIELDS: { key: NumericKey; label: string; help?: string }[] = [
   { key: 'finalPremiumStartingBid', label: 'Final premium opening bid' },
   { key: 'finalPremiumBidIncrement', label: 'Final premium increment' },
   { key: 'reclaimDecisionWindow', label: 'Reclaim window (s)', help: 'Accept-or-decline countdown.' },
-  { key: 'defaultMarketTimeLimit', label: 'Default market time (s)' },
-  { key: 'defaultPremiumTimeLimit', label: 'Default premium time (s)' },
-  { key: 'qualifiers', label: 'Qualifiers for Round 3' },
+  { key: 'blocks', label: 'Blocks', help: 'Each block is N questions then a premium.' },
+  { key: 'questionsPerBlock', label: 'Questions per block', help: 'Drawn at random.' },
+  { key: 'noRepeatWindow', label: 'No-repeat window', help: 'Questions before an item may recur.' },
+  { key: 'questionIntroSeconds', label: 'Intro card (s)' },
+  { key: 'premiumWindowSeconds', label: 'Premium window (s)', help: 'The whole premium process.' },
+  { key: 'premiumSolveSeconds', label: 'Premium solve time (s)' },
+  { key: 'strategyWindowSeconds', label: 'Strategy phase (s)' },
+  { key: 'hideLeaderboardLastQuestions', label: 'Blackout last N questions' },
+  { key: 'podiumPlaces', label: 'Podium places' },
   { key: 'submissionGraceMs', label: 'Submission grace (ms)', help: 'Latency allowance on the deadline.' },
   { key: 'speedBonusMax', label: 'Max speed bonus' },
   { key: 'codeExecutionTimeoutMs', label: 'Code run timeout (ms)' },
 ];
 
 const TOGGLES: { key: BooleanKey; label: string; help?: string }[] = [
-  { key: 'marketOptIn', label: 'Teams must opt in to market challenges' },
-  { key: 'requireAccessKeyForMarket', label: 'Require the printed key to unlock a market challenge' },
-  { key: 'marketPenaltyEnabled', label: 'Wrong market answers cost capital' },
-  { key: 'marketTimeoutPenalised', label: 'A market timeout counts as wrong' },
+  { key: 'questionOptIn', label: 'Teams must opt in to each question' },
+  { key: 'requireAccessKey', label: 'Require the printed key to unlock a question' },
+  { key: 'penaltyEnabled', label: 'Wrong answers cost capital' },
+  { key: 'timeoutPenalised', label: 'A timeout counts as wrong' },
   { key: 'speedBonusEnabled', label: 'Award a speed bonus' },
   { key: 'reclaimAutoDecline', label: 'Auto-decline a reclaim when the window lapses' },
   { key: 'revealExplanations', label: 'Show explanations after a result' },
@@ -151,16 +157,16 @@ export function ConfigPanel() {
 
           <div className="field">
             <label className="label" htmlFor="cfg-reward-mode">
-              Market reward mode
+              Reward mode
             </label>
             <select
               id="cfg-reward-mode"
               className="select"
-              value={draft.marketReward.mode}
+              value={draft.questionReward.mode}
               onChange={(event) =>
                 setDraft({
                   ...draft,
-                  marketReward: { ...draft.marketReward, mode: event.target.value as 'fixed' },
+                  questionReward: { ...draft.questionReward, mode: event.target.value as 'fixed' },
                 })
               }
             >
@@ -178,11 +184,11 @@ export function ConfigPanel() {
               id="cfg-reward-base"
               className="input num"
               type="number"
-              value={draft.marketReward.base}
+              value={draft.questionReward.base}
               onChange={(event) =>
                 setDraft({
                   ...draft,
-                  marketReward: { ...draft.marketReward, base: Number(event.target.value) },
+                  questionReward: { ...draft.questionReward, base: Number(event.target.value) },
                 })
               }
             />
@@ -196,14 +202,48 @@ export function ConfigPanel() {
               id="cfg-penalty-base"
               className="input num"
               type="number"
-              value={draft.marketPenalty.base}
+              value={draft.questionPenalty.base}
               onChange={(event) =>
                 setDraft({
                   ...draft,
-                  marketPenalty: { ...draft.marketPenalty, base: Number(event.target.value) },
+                  questionPenalty: { ...draft.questionPenalty, base: Number(event.target.value) },
                 })
               }
             />
+          </div>
+
+          <hr className="divider" />
+
+          <div>
+            <span className="label">Solve time by difficulty (seconds)</span>
+            <div className="config-times">
+              {(['easy', 'medium', 'hard', 'very_hard'] as const).map((tier) => (
+                <div className="field" key={tier}>
+                  <label className="label" htmlFor={`time-${tier}`}>
+                    {tier.replace('_', ' ')}
+                  </label>
+                  <input
+                    id={`time-${tier}`}
+                    className="input num"
+                    type="number"
+                    min={5}
+                    value={draft.difficultyTimes[tier]}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        difficultyTimes: {
+                          ...draft.difficultyTimes,
+                          [tier]: Number(event.target.value),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="dim" style={{ fontSize: 'var(--fs-2xs)' }}>
+              Applied when the question pool is seeded. Never hard-coded in a component.
+            </p>
           </div>
 
           <button className="btn btn--primary btn--block" onClick={save} disabled={busy || !dirty}>

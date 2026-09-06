@@ -35,10 +35,15 @@ function feed(t: string, d: unknown, extra: Partial<Envelope> = {}): void {
 }
 
 const game = (over: Partial<GameState> = {}): GameState => ({
-  phase: 'lobby',
+  phase: 'idle',
   resumePhase: null,
-  currentChallengeId: null,
+  slotIndex: 0,
+  currentQuestionId: null,
   currentAuctionId: null,
+  blockNumber: 0,
+  totalBlocks: 4,
+  totalSlots: 16,
+  finalStretch: false,
   timer: { endsAt: null, duration: null, label: null },
   serverNow: Date.now(),
   startedAt: null,
@@ -51,9 +56,11 @@ const me = (over: Partial<TeamView> = {}): TeamView => ({
   capital: 1000,
   maxBid: 500,
   rank: 3,
+  podium: 3,
   totalTeams: 12,
-  qualified: true,
-  challengeState: 'locked',
+  leaderboardHidden: false,
+  questionState: 'locked',
+  questionDeadline: null,
   premiumUnlocked: false,
   premiumRisk: null,
   lastResult: null,
@@ -61,10 +68,10 @@ const me = (over: Partial<TeamView> = {}): TeamView => ({
   inAuction: false,
   myHighestBid: null,
   stats: {
-    marketAttempted: 0,
-    marketCorrect: 0,
-    marketWrong: 0,
-    marketSkipped: 0,
+    attempted: 0,
+    correct: 0,
+    wrong: 0,
+    skipped: 0,
     premiumWins: 0,
     premiumAttempts: 0,
     premiumCorrect: 0,
@@ -82,7 +89,7 @@ const row = (id: string, capital: number, rank: number): LeaderboardRow => ({
   capital,
   startingCapital: 1000,
   delta: capital - 1000,
-  qualified: rank <= 10,
+  podium: rank <= 3 ? rank : null,
   previousRank: null,
   connectionStatus: 'online',
   status: 'active',
@@ -94,9 +101,12 @@ const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
   game: game(),
   teams: [],
   leaderboard: [],
+  leaderboardHidden: false,
   auction: null,
   premium: null,
-  challenge: null,
+  premiumPreview: null,
+  question: null,
+  podium: null,
   me: null,
   seq: 1,
   serverNow: Date.now(),
@@ -109,12 +119,15 @@ beforeEach(() => {
     game: null,
     teams: [],
     leaderboard: [],
+    leaderboardHidden: false,
     auction: null,
     premium: null,
-    challenge: null,
+    premiumPreview: null,
+    question: null,
+    podium: null,
     me: null,
     liveEvents: [],
-    challengeIndex: [],
+    sequence: [],
     audit: [],
     toasts: [],
     flash: null,
@@ -128,14 +141,14 @@ beforeEach(() => {
 describe('SNAPSHOT', () => {
   it('replaces the whole world and marks the client ready', () => {
     feed('SNAPSHOT', snapshot({
-      game: game({ phase: 'market', currentChallengeId: 'C01' }),
+      game: game({ phase: 'question_active', currentQuestionId: 'N01', slotIndex: 1 }),
       leaderboard: [row('T01', 1200, 1)],
       me: me({ capital: 1200 }),
     }));
 
     const state = useStore.getState();
     expect(state.ready).toBe(true);
-    expect(state.game?.phase).toBe('market');
+    expect(state.game?.phase).toBe('question_active');
     expect(state.leaderboard).toHaveLength(1);
     expect(state.me?.capital).toBe(1200);
   });
@@ -149,18 +162,19 @@ describe('SNAPSHOT', () => {
 
 describe('game lifecycle frames', () => {
   it('tracks phase changes', () => {
-    feed('PHASE_CHANGED', { game: game({ phase: 'auction' }) });
-    expect(useStore.getState().game?.phase).toBe('auction');
+    feed('PHASE_CHANGED', { game: game({ phase: 'auction_active' }) });
+    expect(useStore.getState().game?.phase).toBe('auction_active');
     feed('GAME_PAUSED', { game: game({ phase: 'paused' }) });
     expect(useStore.getState().game?.phase).toBe('paused');
   });
 
   it('stores the final leaderboard on completion', () => {
     feed('GAME_COMPLETE', {
-      game: game({ phase: 'complete' }),
+      game: game({ phase: 'completed' }),
+      podium: [{ place: 1, teamId: 'T02', name: 'Team T02', capital: 3000, delta: 2000 }],
       leaderboard: [row('T02', 3000, 1), row('T01', 900, 2)],
     });
-    expect(useStore.getState().game?.phase).toBe('complete');
+    expect(useStore.getState().game?.phase).toBe('completed');
     expect(useStore.getState().leaderboard[0]?.teamId).toBe('T02');
   });
 
@@ -174,7 +188,7 @@ describe('game lifecycle frames', () => {
   });
 
   it('applies and clears the timer', () => {
-    feed('PHASE_CHANGED', { game: game({ phase: 'market' }) });
+    feed('PHASE_CHANGED', { game: game({ phase: 'question_active' }) });
     feed('TIMER_STARTED', { endsAt: 12345, duration: 90, label: 'MARKET' });
     expect(useStore.getState().game?.timer).toMatchObject({ endsAt: 12345, duration: 90 });
     feed('TIMER_EXPIRED', { label: 'MARKET' });
@@ -236,7 +250,7 @@ describe('auction frames', () => {
   const auctionView = (currentBid: number | null, leader: string | null) => ({
     auction: {
       id: 1,
-      challengeId: 'C04',
+      questionId: 'P1',
       status: 'open',
       startingBid: 300,
       increment: 100,
@@ -247,7 +261,19 @@ describe('auction frames', () => {
       startedAt: 1,
       endedAt: null,
     },
-    challenge: { id: 'C04', index: 4, title: 'Vault', category: 'algorithms', marketType: 'premium' },
+    preview: {
+      questionId: 'P1',
+      slotIndex: 4,
+      blockNumber: 1,
+      title: 'Vault',
+      domain: 'algorithms',
+      difficulty: 'hard',
+      timeLimit: 120,
+      startingBid: 300,
+      increment: 100,
+      isFinalPremium: false,
+      premiumNumber: 1,
+    },
     bidders: leader ? [{ teamId: leader, teamName: leader, amount: currentBid ?? 0, isLeader: true }] : [],
     history: [],
     nextBid: (currentBid ?? 200) + 100,
@@ -277,11 +303,11 @@ describe('auction frames', () => {
 
   it('flashes YOU WON only to the winner', () => {
     useStore.setState({ me: me({ teamId: 'T02' }) });
-    feed('AUCTION_WON', { teamId: 'T02', teamName: 'B', amount: 700, challengeId: 'C04' });
+    feed('AUCTION_WON', { teamId: 'T02', teamName: 'B', amount: 700, questionId: 'P1' });
     expect(useStore.getState().flash).toMatchObject({ kind: 'auction_won', amount: 700 });
 
     useStore.setState({ flash: null, me: me({ teamId: 'T05' }) });
-    feed('AUCTION_WON', { teamId: 'T02', teamName: 'B', amount: 700, challengeId: 'C04' });
+    feed('AUCTION_WON', { teamId: 'T02', teamName: 'B', amount: 700, questionId: 'P1' });
     expect(useStore.getState().flash).toBeNull();
   });
 
@@ -294,7 +320,7 @@ describe('auction frames', () => {
 
 describe('premium frames', () => {
   const premium = (over: Record<string, unknown> = {}) => ({
-    challengeId: 'C04',
+    questionId: 'P1',
     stage: 'sold',
     auctionId: 1,
     ladder: [],
@@ -311,7 +337,7 @@ describe('premium frames', () => {
 
   it('flashes PREMIUM UNLOCKED only to the authorised team', () => {
     useStore.setState({ me: me({ teamId: 'T02' }), role: 'participant' });
-    feed('CHALLENGE_UNLOCKED', { challengeId: 'C04', teamId: 'T02', risk: 700 });
+    feed('QUESTION_UNLOCKED', { questionId: 'P1', teamId: 'T02', risk: 700 });
     expect(useStore.getState().flash).toMatchObject({ kind: 'premium_unlocked', amount: 700 });
   });
 
@@ -339,11 +365,11 @@ describe('premium frames', () => {
 describe('result frames', () => {
   it('flashes CORRECT with the reward to the team that answered', () => {
     useStore.setState({ me: me({ teamId: 'T01' }), role: 'participant' });
-    feed('CHALLENGE_RESULT', {
+    feed('QUESTION_RESULT', {
       teamId: 'T01',
       teamName: 'A',
-      challengeId: 'C01',
-      challengeIndex: 1,
+      questionId: 'N01',
+      slotIndex: 1,
       result: 'correct',
       delta: 200,
       newCapital: 1200,
@@ -356,11 +382,11 @@ describe('result frames', () => {
 
   it('flashes INCORRECT with the loss', () => {
     useStore.setState({ me: me({ teamId: 'T01' }), role: 'participant' });
-    feed('CHALLENGE_RESULT', {
+    feed('QUESTION_RESULT', {
       teamId: 'T01',
       teamName: 'A',
-      challengeId: 'C01',
-      challengeIndex: 1,
+      questionId: 'N01',
+      slotIndex: 1,
       result: 'wrong',
       delta: -100,
       newCapital: 900,
@@ -373,11 +399,11 @@ describe('result frames', () => {
 
   it('gives the organizer a toast rather than a full-screen flash', () => {
     useStore.setState({ me: null, role: 'organizer' });
-    feed('CHALLENGE_RESULT', {
+    feed('QUESTION_RESULT', {
       teamId: 'T05',
       teamName: 'CODE NINJAS',
-      challengeId: 'C01',
-      challengeIndex: 1,
+      questionId: 'N01',
+      slotIndex: 1,
       result: 'correct',
       delta: 200,
       newCapital: 1200,
@@ -389,10 +415,10 @@ describe('result frames', () => {
     expect(useStore.getState().toasts[0]?.title).toContain('CODE NINJAS');
   });
 
-  it('celebrates crossing into the qualification zone', () => {
-    useStore.setState({ me: me({ qualified: false, rank: 11 }) });
-    feed('ME_UPDATED', { me: me({ qualified: true, rank: 9 }) });
-    expect(useStore.getState().flash).toMatchObject({ kind: 'qualified' });
+  it('mirrors the leaderboard blackout from the private view', () => {
+    useStore.setState({ me: me({ leaderboardHidden: false }), leaderboardHidden: false });
+    feed('ME_UPDATED', { me: me({ leaderboardHidden: true, rank: 0 }) });
+    expect(useStore.getState().leaderboardHidden).toBe(true);
   });
 });
 
@@ -400,7 +426,7 @@ describe('organizer frames', () => {
   it('accumulates audit entries with a cap', () => {
     for (let i = 1; i <= 900; i++) {
       feed('AUDIT_APPENDED', {
-        entries: [{ id: i, action: 'X', teamId: null, challengeId: null, timestamp: i, metadata: {} }],
+        entries: [{ id: i, action: 'X', teamId: null, questionId: null, timestamp: i, metadata: {} }],
       });
     }
     const audit = useStore.getState().audit;
@@ -411,7 +437,7 @@ describe('organizer frames', () => {
   it('tracks the live events queue', () => {
     feed('LIVE_EVENTS', {
       events: [
-        { id: 'a', teamId: 'T01', teamName: 'A', challengeId: 'C01', label: 'Market #01', kind: 'submitted', since: 1, needsAttention: true },
+        { id: 'a', teamId: 'T01', teamName: 'A', questionId: 'N01', label: 'Market #01', kind: 'submitted', since: 1, needsAttention: true },
       ],
     });
     expect(useStore.getState().liveEvents).toHaveLength(1);

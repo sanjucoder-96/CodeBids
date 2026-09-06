@@ -12,6 +12,7 @@ import { useStore } from '../lib/store.js';
 import { money } from '../lib/format.js';
 import { dramaticReveal } from '../lib/motion.js';
 import { sound } from '../lib/sound.js';
+import { AlertIcon } from '../ui/Icons.js';
 
 export function ReclaimScreen() {
   const me = useStore((s) => s.me);
@@ -37,7 +38,7 @@ export function ReclaimScreen() {
 
   useEffect(() => {
     if (offer) sound.play('reclaim');
-  }, [offer?.challengeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [offer?.questionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!offer || !me) return null;
 
@@ -50,7 +51,7 @@ export function ReclaimScreen() {
     if (busy || !offer) return;
     setBusy(true);
     try {
-      await call('RECLAIM_RESPONSE', { challengeId: offer.challengeId, accept });
+      await call('RECLAIM_RESPONSE', { questionId: offer.questionId, accept });
     } catch (error) {
       pushToast({
         kind: 'warn',
@@ -68,7 +69,12 @@ export function ReclaimScreen() {
         initial="hidden"
         animate="show"
       >
-        <div className="reclaim__banner">⚠️ PREMIUM RECLAIM</div>
+        <div className="reclaim__banner">
+          <span aria-hidden="true">
+            <AlertIcon size={18} />
+          </span>
+          PREMIUM RECLAIM
+        </div>
 
         {failed ? (
           <p className="reclaim__context">

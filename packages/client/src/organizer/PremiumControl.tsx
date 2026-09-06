@@ -40,7 +40,7 @@ export function PremiumControl() {
   return (
     <section className="panel panel--flush panel--premium">
       <div className="panel__head">
-        <span className="panel__title">Premium control · {premium.challengeId}</span>
+        <span className="panel__title">Premium control · {premium.questionId}</span>
         <span className="badge badge--premium">
           {premium.stage.replace(/_/g, ' ').toUpperCase()}
           {premium.attemptNumber > 0 ? ` · ATTEMPT ${premium.attemptNumber}/2` : ''}

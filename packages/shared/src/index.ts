@@ -4,5 +4,6 @@ export * from './economy.js';
 export * from './evaluation.js';
 export * from './reclaim.js';
 export * from './leaderboard.js';
+export * from './sequence.js';
 export * from './protocol.js';
 export * from './util.js';

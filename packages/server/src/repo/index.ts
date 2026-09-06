@@ -9,18 +9,23 @@ import type {
   Auction,
   AuctionStatus,
   Bid,
-  Challenge,
+  Domain,
+  Difficulty,
   GamePhase,
   GameState,
   LadderEntry,
+  PodiumEntry,
   PremiumState,
+  ProjectorMode,
+  Question,
+  QuestionKind,
+  SequenceSlot,
   Team,
-  TeamChallengeState,
+  TeamQuestionState,
   Transaction,
   TransactionType,
 } from '@code-market/shared';
 import { DEFAULT_CONFIG, applyConfigPatch, type GameConfig } from '@code-market/shared';
-import type { ProjectorMode } from '@code-market/shared';
 import type { DB } from '../db/index.js';
 
 /* ------------------------------------------------------------------ *
@@ -42,14 +47,13 @@ interface TeamRow {
   last_seen_at: number | null;
 }
 
-interface ChallengeRow {
+interface QuestionRow {
   id: string;
-  idx: number;
+  kind: string;
   title: string;
-  category: string;
+  domain: string;
   type: string;
   difficulty: string;
-  market_type: string;
   time_limit: number;
   reward_override: number | null;
   penalty_override: number | null;
@@ -57,12 +61,12 @@ interface ChallengeRow {
   evaluation_data: string;
   access_key: string;
   access_key_hash: string;
-  state: string;
 }
 
 interface AuctionRow {
   id: number;
-  challenge_id: string;
+  question_id: string;
+  slot_index: number;
   status: string;
   starting_bid: number;
   increment: number;
@@ -88,7 +92,8 @@ interface BidRow {
 interface GameStateRow {
   phase: string;
   resume_phase: string | null;
-  current_challenge_id: string | null;
+  slot_index: number;
+  current_question_id: string | null;
   current_auction_id: number | null;
   timer_ends_at: number | null;
   timer_duration: number | null;
@@ -99,7 +104,8 @@ interface GameStateRow {
 }
 
 interface PremiumRow {
-  challenge_id: string;
+  question_id: string;
+  slot_index: number;
   stage: string;
   auction_id: number | null;
   ladder: string;
@@ -111,6 +117,7 @@ interface PremiumRow {
   offer_deadline: number | null;
   failed_team_id: string | null;
   outcome: string | null;
+  window_ends_at: number | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -131,15 +138,14 @@ const toTeam = (r: TeamRow): Team => ({
   lastSeenAt: r.last_seen_at,
 });
 
-const toChallenge = (r: ChallengeRow): Challenge => {
-  const base: Challenge = {
+const toQuestion = (r: QuestionRow): Question => {
+  const base: Question = {
     id: r.id,
-    index: r.idx,
+    kind: r.kind as QuestionKind,
     title: r.title,
-    category: r.category as Challenge['category'],
-    type: r.type as Challenge['type'],
-    difficulty: r.difficulty as Challenge['difficulty'],
-    marketType: r.market_type as Challenge['marketType'],
+    domain: r.domain as Domain,
+    type: r.type as Question['type'],
+    difficulty: r.difficulty as Difficulty,
     timeLimit: r.time_limit,
     question: JSON.parse(r.question_data),
     evaluation: JSON.parse(r.evaluation_data),
@@ -152,7 +158,8 @@ const toChallenge = (r: ChallengeRow): Challenge => {
 
 const toAuction = (r: AuctionRow): Auction => ({
   id: r.id,
-  challengeId: r.challenge_id,
+  questionId: r.question_id,
+  slotIndex: r.slot_index,
   status: r.status as AuctionStatus,
   startingBid: r.starting_bid,
   increment: r.increment,
@@ -209,9 +216,7 @@ export class Repo {
       'INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     );
     const write = this.db.transaction((cfg: GameConfig) => {
-      for (const [key, value] of Object.entries(cfg)) {
-        stmt.run(key, JSON.stringify(value));
-      }
+      for (const [key, value] of Object.entries(cfg)) stmt.run(key, JSON.stringify(value));
     });
     write(config);
   }
@@ -340,9 +345,7 @@ export class Repo {
 
   resetTeamCapital(startingCapital: number, protectedReserve: number): void {
     this.db
-      .prepare(
-        'UPDATE teams SET capital = ?, starting_capital = ?, protected_reserve = ?',
-      )
+      .prepare('UPDATE teams SET capital = ?, starting_capital = ?, protected_reserve = ?')
       .run(startingCapital, startingCapital, protectedReserve);
   }
 
@@ -363,52 +366,37 @@ export class Repo {
     return row ? { teamId: row.team_id, role: row.role } : null;
   }
 
-  touchSession(token: string): void {
-    this.db.prepare('UPDATE team_sessions SET last_seen_at = ? WHERE token = ?').run(Date.now(), token);
-  }
-
   deleteSessionsForTeam(teamId: string): void {
     this.db.prepare('DELETE FROM team_sessions WHERE team_id = ?').run(teamId);
   }
 
-  /* --- challenges -------------------------------------------------- */
+  /* --- question pool ------------------------------------------------ */
 
-  listChallenges(): Challenge[] {
-    return (
-      this.db.prepare('SELECT * FROM challenges ORDER BY idx').all() as ChallengeRow[]
-    ).map(toChallenge);
+  listQuestions(): Question[] {
+    return (this.db.prepare('SELECT * FROM questions ORDER BY id').all() as QuestionRow[]).map(
+      toQuestion,
+    );
   }
 
-  getChallenge(id: string): Challenge | null {
-    const row = this.db.prepare('SELECT * FROM challenges WHERE id = ?').get(id) as
-      | ChallengeRow
+  getQuestion(id: string): Question | null {
+    const row = this.db.prepare('SELECT * FROM questions WHERE id = ?').get(id) as
+      | QuestionRow
       | undefined;
-    return row ? toChallenge(row) : null;
+    return row ? toQuestion(row) : null;
   }
 
-  getChallengeState(id: string): string | null {
-    const row = this.db.prepare('SELECT state FROM challenges WHERE id = ?').get(id) as
-      | { state: string }
-      | undefined;
-    return row?.state ?? null;
-  }
-
-  setChallengeState(id: string, state: 'pending' | 'active' | 'complete'): void {
-    this.db.prepare('UPDATE challenges SET state = ? WHERE id = ?').run(state, id);
-  }
-
-  upsertChallenge(challenge: Challenge, accessKeyHash: string): void {
+  upsertQuestion(question: Question, accessKeyHash: string): void {
     this.db
       .prepare(
-        `INSERT INTO challenges
-          (id, idx, title, category, type, difficulty, market_type, time_limit,
+        `INSERT INTO questions
+          (id, kind, title, domain, type, difficulty, time_limit,
            reward_override, penalty_override, question_data, evaluation_data,
-           access_key, access_key_hash, state)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+           access_key, access_key_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
-           idx = excluded.idx, title = excluded.title, category = excluded.category,
+           kind = excluded.kind, title = excluded.title, domain = excluded.domain,
            type = excluded.type, difficulty = excluded.difficulty,
-           market_type = excluded.market_type, time_limit = excluded.time_limit,
+           time_limit = excluded.time_limit,
            reward_override = excluded.reward_override,
            penalty_override = excluded.penalty_override,
            question_data = excluded.question_data,
@@ -417,43 +405,97 @@ export class Repo {
            access_key_hash = excluded.access_key_hash`,
       )
       .run(
-        challenge.id,
-        challenge.index,
-        challenge.title,
-        challenge.category,
-        challenge.type,
-        challenge.difficulty,
-        challenge.marketType,
-        challenge.timeLimit,
-        challenge.rewardOverride ?? null,
-        challenge.penaltyOverride ?? null,
-        JSON.stringify(challenge.question),
-        JSON.stringify(challenge.evaluation),
-        challenge.accessKey,
+        question.id,
+        question.kind,
+        question.title,
+        question.domain,
+        question.type,
+        question.difficulty,
+        question.timeLimit,
+        question.rewardOverride ?? null,
+        question.penaltyOverride ?? null,
+        JSON.stringify(question.question),
+        JSON.stringify(question.evaluation),
+        question.accessKey,
         accessKeyHash,
       );
   }
 
-  getAccessKeyHash(challengeId: string): string | null {
+  getAccessKeyHash(questionId: string): string | null {
     const row = this.db
-      .prepare('SELECT access_key_hash FROM challenges WHERE id = ?')
-      .get(challengeId) as { access_key_hash: string } | undefined;
+      .prepare('SELECT access_key_hash FROM questions WHERE id = ?')
+      .get(questionId) as { access_key_hash: string } | undefined;
     return row?.access_key_hash ?? null;
   }
 
-  resetChallengeStates(): void {
-    this.db.prepare("UPDATE challenges SET state = 'pending'").run();
+  /* --- generated sequence -------------------------------------------- */
+
+  saveSequence(slots: readonly SequenceSlot[]): void {
+    const write = this.db.transaction((rows: readonly SequenceSlot[]) => {
+      this.db.prepare('DELETE FROM game_sequence').run();
+      const stmt = this.db.prepare(
+        `INSERT INTO game_sequence (idx, block_number, position_in_block, kind, question_id, state)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const slot of rows) {
+        stmt.run(
+          slot.index,
+          slot.blockNumber,
+          slot.positionInBlock,
+          slot.kind,
+          slot.questionId,
+          slot.state,
+        );
+      }
+    });
+    write(slots);
+  }
+
+  listSequence(): SequenceSlot[] {
+    const rows = this.db.prepare('SELECT * FROM game_sequence ORDER BY idx').all() as {
+      idx: number;
+      block_number: number;
+      position_in_block: number;
+      kind: string;
+      question_id: string;
+      state: string;
+    }[];
+    return rows.map((r) => ({
+      index: r.idx,
+      blockNumber: r.block_number,
+      positionInBlock: r.position_in_block,
+      kind: r.kind as QuestionKind,
+      questionId: r.question_id,
+      state: r.state as SequenceSlot['state'],
+    }));
+  }
+
+  getSlot(index: number): SequenceSlot | null {
+    return this.listSequence().find((s) => s.index === index) ?? null;
+  }
+
+  setSlotState(index: number, state: SequenceSlot['state']): void {
+    this.db.prepare('UPDATE game_sequence SET state = ? WHERE idx = ?').run(state, index);
+  }
+
+  clearSequence(): void {
+    this.db.prepare('DELETE FROM game_sequence').run();
   }
 
   /* --- auctions ---------------------------------------------------- */
 
-  createAuction(challengeId: string, startingBid: number, increment: number): Auction {
+  createAuction(
+    questionId: string,
+    slotIndex: number,
+    startingBid: number,
+    increment: number,
+  ): Auction {
     const info = this.db
       .prepare(
-        `INSERT INTO auctions (challenge_id, status, starting_bid, increment, started_at)
-         VALUES (?, 'open', ?, ?, ?)`,
+        `INSERT INTO auctions (question_id, slot_index, status, starting_bid, increment, started_at)
+         VALUES (?, ?, 'open', ?, ?, ?)`,
       )
-      .run(challengeId, startingBid, increment, Date.now());
+      .run(questionId, slotIndex, startingBid, increment, Date.now());
     return this.getAuction(Number(info.lastInsertRowid)) as Auction;
   }
 
@@ -464,10 +506,10 @@ export class Repo {
     return row ? toAuction(row) : null;
   }
 
-  getAuctionForChallenge(challengeId: string): Auction | null {
+  getAuctionForSlot(slotIndex: number): Auction | null {
     const row = this.db
-      .prepare('SELECT * FROM auctions WHERE challenge_id = ? ORDER BY id DESC LIMIT 1')
-      .get(challengeId) as AuctionRow | undefined;
+      .prepare('SELECT * FROM auctions WHERE slot_index = ? ORDER BY id DESC LIMIT 1')
+      .get(slotIndex) as AuctionRow | undefined;
     return row ? toAuction(row) : null;
   }
 
@@ -531,7 +573,9 @@ export class Repo {
         bid.valid ? 1 : 0,
         bid.rejectedReason ?? null,
       );
-    const row = this.db.prepare('SELECT * FROM bids WHERE id = ?').get(Number(info.lastInsertRowid)) as BidRow;
+    const row = this.db
+      .prepare('SELECT * FROM bids WHERE id = ?')
+      .get(Number(info.lastInsertRowid)) as BidRow;
     return toBid(row);
   }
 
@@ -544,6 +588,12 @@ export class Repo {
 
   listAllBids(): Bid[] {
     return (this.db.prepare('SELECT * FROM bids ORDER BY id').all() as BidRow[]).map(toBid);
+  }
+
+  listBidsForTeam(teamId: string): Bid[] {
+    return (
+      this.db.prepare('SELECT * FROM bids WHERE team_id = ? ORDER BY id').all(teamId) as BidRow[]
+    ).map(toBid);
   }
 
   lastValidBid(auctionId: number): Bid | null {
@@ -561,13 +611,14 @@ export class Repo {
 
   /* --- premium state ------------------------------------------------ */
 
-  getPremiumState(challengeId: string): PremiumState | null {
+  getPremiumState(questionId: string): PremiumState | null {
     const row = this.db
-      .prepare('SELECT * FROM premium_states WHERE challenge_id = ?')
-      .get(challengeId) as PremiumRow | undefined;
+      .prepare('SELECT * FROM premium_states WHERE question_id = ?')
+      .get(questionId) as PremiumRow | undefined;
     if (!row) return null;
     return {
-      challengeId: row.challenge_id,
+      questionId: row.question_id,
+      slotIndex: row.slot_index,
       stage: row.stage as PremiumState['stage'],
       auctionId: row.auction_id,
       ladder: JSON.parse(row.ladder) as LadderEntry[],
@@ -579,6 +630,7 @@ export class Repo {
       offerDeadline: row.offer_deadline,
       failedTeamId: row.failed_team_id,
       outcome: row.outcome as PremiumState['outcome'],
+      windowEndsAt: row.window_ends_at,
     };
   }
 
@@ -586,18 +638,22 @@ export class Repo {
     this.db
       .prepare(
         `INSERT INTO premium_states
-          (challenge_id, stage, auction_id, ladder, active_team_id, active_risk,
-           attempt_number, offer_team_id, offer_risk, offer_deadline, failed_team_id, outcome)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(challenge_id) DO UPDATE SET
-           stage = excluded.stage, auction_id = excluded.auction_id, ladder = excluded.ladder,
+          (question_id, slot_index, stage, auction_id, ladder, active_team_id, active_risk,
+           attempt_number, offer_team_id, offer_risk, offer_deadline, failed_team_id, outcome,
+           window_ends_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(question_id) DO UPDATE SET
+           slot_index = excluded.slot_index, stage = excluded.stage,
+           auction_id = excluded.auction_id, ladder = excluded.ladder,
            active_team_id = excluded.active_team_id, active_risk = excluded.active_risk,
            attempt_number = excluded.attempt_number, offer_team_id = excluded.offer_team_id,
            offer_risk = excluded.offer_risk, offer_deadline = excluded.offer_deadline,
-           failed_team_id = excluded.failed_team_id, outcome = excluded.outcome`,
+           failed_team_id = excluded.failed_team_id, outcome = excluded.outcome,
+           window_ends_at = excluded.window_ends_at`,
       )
       .run(
-        state.challengeId,
+        state.questionId,
+        state.slotIndex,
         state.stage,
         state.auctionId,
         JSON.stringify(state.ladder),
@@ -609,15 +665,16 @@ export class Repo {
         state.offerDeadline,
         state.failedTeamId,
         state.outcome,
+        state.windowEndsAt,
       );
   }
 
   listPremiumStates(): PremiumState[] {
-    const rows = this.db.prepare('SELECT challenge_id FROM premium_states').all() as {
-      challenge_id: string;
+    const rows = this.db.prepare('SELECT question_id FROM premium_states').all() as {
+      question_id: string;
     }[];
     return rows
-      .map((r) => this.getPremiumState(r.challenge_id))
+      .map((r) => this.getPremiumState(r.question_id))
       .filter((s): s is PremiumState => s !== null);
   }
 
@@ -625,7 +682,8 @@ export class Repo {
 
   insertAttempt(attempt: {
     teamId: string;
-    challengeId: string;
+    questionId: string;
+    slotIndex: number;
     attemptNumber: number;
     result: string;
     scoreChange: number;
@@ -637,13 +695,14 @@ export class Repo {
     const info = this.db
       .prepare(
         `INSERT INTO attempts
-          (team_id, challenge_id, attempt_number, result, score_change, risk_amount,
+          (team_id, question_id, slot_index, attempt_number, result, score_change, risk_amount,
            timestamp, duration_ms, detail, submission)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         attempt.teamId,
-        attempt.challengeId,
+        attempt.questionId,
+        attempt.slotIndex,
         attempt.attemptNumber,
         attempt.result,
         Math.round(attempt.scoreChange),
@@ -656,10 +715,10 @@ export class Repo {
     return Number(info.lastInsertRowid);
   }
 
-  hasAttempt(teamId: string, challengeId: string): boolean {
+  hasAttempt(teamId: string, slotIndex: number): boolean {
     const row = this.db
-      .prepare('SELECT 1 AS x FROM attempts WHERE team_id = ? AND challenge_id = ? LIMIT 1')
-      .get(teamId, challengeId);
+      .prepare('SELECT 1 AS x FROM attempts WHERE team_id = ? AND slot_index = ? LIMIT 1')
+      .get(teamId, slotIndex);
     return row !== undefined;
   }
 
@@ -667,7 +726,8 @@ export class Repo {
     const rows = this.db.prepare('SELECT * FROM attempts ORDER BY id').all() as {
       id: number;
       team_id: string;
-      challenge_id: string;
+      question_id: string;
+      slot_index: number;
       attempt_number: number;
       result: string;
       score_change: number;
@@ -679,7 +739,8 @@ export class Repo {
     return rows.map((r) => ({
       id: r.id,
       teamId: r.team_id,
-      challengeId: r.challenge_id,
+      questionId: r.question_id,
+      slotIndex: r.slot_index,
       attemptNumber: r.attempt_number,
       result: r.result as Attempt['result'],
       scoreChange: r.score_change,
@@ -694,14 +755,14 @@ export class Repo {
     return this.listAttempts().filter((a) => a.teamId === teamId);
   }
 
-  countAttemptsForChallenge(challengeId: string): { attempts: number; correct: number } {
+  countAttemptsForSlot(slotIndex: number): { attempts: number; correct: number } {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS attempts,
                 SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) AS correct
-         FROM attempts WHERE challenge_id = ? AND result != 'skipped'`,
+         FROM attempts WHERE slot_index = ? AND result != 'skipped'`,
       )
-      .get(challengeId) as { attempts: number; correct: number | null };
+      .get(slotIndex) as { attempts: number; correct: number | null };
     return { attempts: row.attempts, correct: row.correct ?? 0 };
   }
 
@@ -713,12 +774,14 @@ export class Repo {
     balanceAfter: number;
     type: TransactionType;
     reason: string;
-    challengeId?: string | null;
+    questionId?: string | null;
+    slotIndex?: number | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO transactions (team_id, amount, balance_after, type, reason, challenge_id, timestamp)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO transactions
+          (team_id, amount, balance_after, type, reason, question_id, slot_index, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         tx.teamId,
@@ -726,7 +789,8 @@ export class Repo {
         Math.round(tx.balanceAfter),
         tx.type,
         tx.reason,
-        tx.challengeId ?? null,
+        tx.questionId ?? null,
+        tx.slotIndex ?? null,
         Date.now(),
       );
   }
@@ -739,7 +803,7 @@ export class Repo {
       balance_after: number;
       type: string;
       reason: string;
-      challenge_id: string | null;
+      question_id: string | null;
       timestamp: number;
     }[];
     return rows.map((r) => ({
@@ -749,33 +813,40 @@ export class Repo {
       balanceAfter: r.balance_after,
       type: r.type as TransactionType,
       reason: r.reason,
-      challengeId: r.challenge_id,
+      questionId: r.question_id,
       timestamp: r.timestamp,
     }));
+  }
+
+  listTransactionsForTeam(teamId: string): Transaction[] {
+    return this.listTransactions().filter((t) => t.teamId === teamId);
   }
 
   /* --- participation ----------------------------------------------- */
 
   setParticipation(
     teamId: string,
-    challengeId: string,
-    state: TeamChallengeState,
+    slotIndex: number,
+    questionId: string,
+    state: TeamQuestionState,
     stamps: { unlocked?: boolean; joined?: boolean; submitted?: boolean } = {},
   ): void {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO participation (team_id, challenge_id, state, unlocked_at, joined_at, submitted_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(team_id, challenge_id) DO UPDATE SET
+        `INSERT INTO participation (team_id, slot_index, question_id, state, unlocked_at, joined_at, submitted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(team_id, slot_index) DO UPDATE SET
            state = excluded.state,
+           question_id = excluded.question_id,
            unlocked_at = COALESCE(participation.unlocked_at, excluded.unlocked_at),
            joined_at = COALESCE(participation.joined_at, excluded.joined_at),
            submitted_at = COALESCE(excluded.submitted_at, participation.submitted_at)`,
       )
       .run(
         teamId,
-        challengeId,
+        slotIndex,
+        questionId,
         state,
         stamps.unlocked ? now : null,
         stamps.joined ? now : null,
@@ -785,36 +856,40 @@ export class Repo {
 
   getParticipation(
     teamId: string,
-    challengeId: string,
-  ): { state: TeamChallengeState; joinedAt: number | null; submittedAt: number | null } | null {
+    slotIndex: number,
+  ): { state: TeamQuestionState; joinedAt: number | null; submittedAt: number | null } | null {
     const row = this.db
-      .prepare('SELECT state, joined_at, submitted_at FROM participation WHERE team_id = ? AND challenge_id = ?')
-      .get(teamId, challengeId) as
+      .prepare(
+        'SELECT state, joined_at, submitted_at FROM participation WHERE team_id = ? AND slot_index = ?',
+      )
+      .get(teamId, slotIndex) as
       | { state: string; joined_at: number | null; submitted_at: number | null }
       | undefined;
     if (!row) return null;
     return {
-      state: row.state as TeamChallengeState,
+      state: row.state as TeamQuestionState,
       joinedAt: row.joined_at,
       submittedAt: row.submitted_at,
     };
   }
 
-  listParticipationForChallenge(
-    challengeId: string,
-  ): { teamId: string; state: TeamChallengeState; joinedAt: number | null }[] {
+  listParticipationForSlot(
+    slotIndex: number,
+  ): { teamId: string; state: TeamQuestionState; joinedAt: number | null }[] {
     const rows = this.db
-      .prepare('SELECT team_id, state, joined_at FROM participation WHERE challenge_id = ?')
-      .all(challengeId) as { team_id: string; state: string; joined_at: number | null }[];
+      .prepare('SELECT team_id, state, joined_at FROM participation WHERE slot_index = ?')
+      .all(slotIndex) as { team_id: string; state: string; joined_at: number | null }[];
     return rows.map((r) => ({
       teamId: r.team_id,
-      state: r.state as TeamChallengeState,
+      state: r.state as TeamQuestionState,
       joinedAt: r.joined_at,
     }));
   }
 
-  clearParticipation(): void {
-    this.db.prepare('DELETE FROM participation').run();
+  setJoinedAt(teamId: string, slotIndex: number, joinedAt: number): void {
+    this.db
+      .prepare('UPDATE participation SET joined_at = ? WHERE team_id = ? AND slot_index = ?')
+      .run(joinedAt, teamId, slotIndex);
   }
 
   /* --- game state -------------------------------------------------- */
@@ -824,8 +899,13 @@ export class Repo {
     return {
       phase: row.phase as GamePhase,
       resumePhase: (row.resume_phase as GamePhase | null) ?? null,
-      currentChallengeId: row.current_challenge_id,
+      slotIndex: row.slot_index,
+      currentQuestionId: row.current_question_id,
       currentAuctionId: row.current_auction_id,
+      blockNumber: 0,
+      totalBlocks: 0,
+      totalSlots: 0,
+      finalStretch: false,
       timer: {
         endsAt: row.timer_ends_at,
         duration: row.timer_duration,
@@ -838,9 +918,7 @@ export class Repo {
     };
   }
 
-  saveGameState(
-    patch: Partial<GameState & { projectorMode: ProjectorMode }>,
-  ): void {
+  saveGameState(patch: Partial<GameState & { projectorMode: ProjectorMode }>): void {
     const sets: string[] = [];
     const values: unknown[] = [];
     const push = (column: string, value: unknown) => {
@@ -849,7 +927,8 @@ export class Repo {
     };
     if (patch.phase !== undefined) push('phase', patch.phase);
     if (patch.resumePhase !== undefined) push('resume_phase', patch.resumePhase);
-    if (patch.currentChallengeId !== undefined) push('current_challenge_id', patch.currentChallengeId);
+    if (patch.slotIndex !== undefined) push('slot_index', patch.slotIndex);
+    if (patch.currentQuestionId !== undefined) push('current_question_id', patch.currentQuestionId);
     if (patch.currentAuctionId !== undefined) push('current_auction_id', patch.currentAuctionId);
     if (patch.timer !== undefined) {
       push('timer_ends_at', patch.timer.endsAt);
@@ -864,23 +943,55 @@ export class Repo {
     this.db.prepare(`UPDATE game_state SET ${sets.join(', ')} WHERE id = 1`).run(...values);
   }
 
+  /* --- final results ------------------------------------------------ */
+
+  saveFinalResults(entries: readonly PodiumEntry[]): void {
+    const write = this.db.transaction((rows: readonly PodiumEntry[]) => {
+      this.db.prepare('DELETE FROM final_results').run();
+      const stmt = this.db.prepare(
+        'INSERT INTO final_results (team_id, place, capital, delta, recorded_at) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (const row of rows) stmt.run(row.teamId, row.place, row.capital, row.delta, Date.now());
+    });
+    write(entries);
+  }
+
+  listFinalResults(): PodiumEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT f.team_id, f.place, f.capital, f.delta, t.name
+         FROM final_results f LEFT JOIN teams t ON t.id = f.team_id
+         ORDER BY f.place`,
+      )
+      .all() as { team_id: string; place: number; capital: number; delta: number; name: string | null }[];
+    return rows.map((r) => ({
+      place: r.place,
+      teamId: r.team_id,
+      name: r.name ?? r.team_id,
+      capital: r.capital,
+      delta: r.delta,
+    }));
+  }
+
   /* --- audit ------------------------------------------------------- */
 
   appendAudit(entry: {
     action: string;
     teamId?: string | null;
-    challengeId?: string | null;
+    questionId?: string | null;
+    slotIndex?: number | null;
     metadata?: Record<string, unknown>;
   }): AuditEntry {
     const now = Date.now();
     const info = this.db
       .prepare(
-        'INSERT INTO audit_log (action, team_id, challenge_id, timestamp, metadata) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO audit_log (action, team_id, question_id, slot_index, timestamp, metadata) VALUES (?, ?, ?, ?, ?, ?)',
       )
       .run(
         entry.action,
         entry.teamId ?? null,
-        entry.challengeId ?? null,
+        entry.questionId ?? null,
+        entry.slotIndex ?? null,
         now,
         JSON.stringify(entry.metadata ?? {}),
       );
@@ -888,20 +999,18 @@ export class Repo {
       id: Number(info.lastInsertRowid),
       action: entry.action,
       teamId: entry.teamId ?? null,
-      challengeId: entry.challengeId ?? null,
+      questionId: entry.questionId ?? null,
       timestamp: now,
       metadata: entry.metadata ?? {},
     };
   }
 
   listAudit(limit = 500): AuditEntry[] {
-    const rows = this.db
-      .prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?')
-      .all(limit) as {
+    const rows = this.db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit) as {
       id: number;
       action: string;
       team_id: string | null;
-      challenge_id: string | null;
+      question_id: string | null;
       timestamp: number;
       metadata: string;
     }[];
@@ -910,7 +1019,30 @@ export class Repo {
         id: r.id,
         action: r.action,
         teamId: r.team_id,
-        challengeId: r.challenge_id,
+        questionId: r.question_id,
+        timestamp: r.timestamp,
+        metadata: safeParse(r.metadata),
+      }))
+      .reverse();
+  }
+
+  listAuditForTeam(teamId: string, limit = 300): AuditEntry[] {
+    const rows = this.db
+      .prepare('SELECT * FROM audit_log WHERE team_id = ? ORDER BY id DESC LIMIT ?')
+      .all(teamId, limit) as {
+      id: number;
+      action: string;
+      team_id: string | null;
+      question_id: string | null;
+      timestamp: number;
+      metadata: string;
+    }[];
+    return rows
+      .map((r) => ({
+        id: r.id,
+        action: r.action,
+        teamId: r.team_id,
+        questionId: r.question_id,
         timestamp: r.timestamp,
         metadata: safeParse(r.metadata),
       }))
@@ -928,12 +1060,14 @@ export class Repo {
       this.db.prepare('DELETE FROM transactions').run();
       this.db.prepare('DELETE FROM participation').run();
       this.db.prepare('DELETE FROM audit_log').run();
-      this.db.prepare("UPDATE challenges SET state = 'pending'").run();
+      this.db.prepare('DELETE FROM game_sequence').run();
+      this.db.prepare('DELETE FROM final_results').run();
       this.db
         .prepare(
-          `UPDATE game_state SET phase='lobby', resume_phase=NULL, current_challenge_id=NULL,
-             current_auction_id=NULL, timer_ends_at=NULL, timer_duration=NULL, timer_label=NULL,
-             projector_mode='auto', started_at=NULL, completed_at=NULL, updated_at=? WHERE id=1`,
+          `UPDATE game_state SET phase='idle', resume_phase=NULL, slot_index=0,
+             current_question_id=NULL, current_auction_id=NULL, timer_ends_at=NULL,
+             timer_duration=NULL, timer_label=NULL, projector_mode='auto',
+             started_at=NULL, completed_at=NULL, updated_at=? WHERE id=1`,
         )
         .run(Date.now());
     });

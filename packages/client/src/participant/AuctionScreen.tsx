@@ -9,8 +9,9 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { RollingNumber } from '../ui/AnimatedNumber.js';
-import { money, challengeLabel } from '../lib/format.js';
+import { money, domainLabel, difficultyLabel } from '../lib/format.js';
 import { fadeUp, staggerChildren } from '../lib/motion.js';
+import { DiamondIcon, FlameIcon } from '../ui/Icons.js';
 
 export function AuctionScreen() {
   const auction = useStore((s) => s.auction);
@@ -30,7 +31,7 @@ export function AuctionScreen() {
     );
   }
 
-  const isFinal = auction.challenge.marketType === 'final_premium';
+  const isFinal = auction.preview.isFinalPremium;
   const leader = auction.auction.currentLeaderTeamId;
   const iAmLeading = leader === me.teamId;
   const myBid = me.myHighestBid;
@@ -64,10 +65,15 @@ export function AuctionScreen() {
       <motion.div className="auction__hero panel panel--premium" variants={fadeUp} initial="hidden" animate="show">
         <div className="auction__hero-head">
           <span className="eyebrow premium-text">
-            {isFinal ? '💎 FINAL PREMIUM' : '🔥 PREMIUM'} ·{' '}
-            {challengeLabel(auction.challenge.index, auction.challenge.marketType)}
+            <span aria-hidden="true" style={{ verticalAlign: '-3px', marginRight: 6 }}>
+              {isFinal ? <DiamondIcon size={15} /> : <FlameIcon size={15} />}
+            </span>
+            {isFinal ? 'FINAL PREMIUM' : `PREMIUM #${auction.preview.premiumNumber}`}
           </span>
-          <span className="badge badge--premium">{auction.challenge.category.replace(/_/g, ' ')}</span>
+          <span className="badge badge--premium">{domainLabel(auction.preview.domain)}</span>
+          <span className="badge" data-difficulty={auction.preview.difficulty}>
+            {difficultyLabel(auction.preview.difficulty)}
+          </span>
         </div>
 
         <div className="auction__bid">

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, copyFileSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,15 +29,71 @@ export interface OpenOptions {
   verbose?: boolean;
 }
 
+/**
+ * Bumped whenever the on-disk shape changes incompatibly. The schema uses
+ * `CREATE TABLE IF NOT EXISTS`, so a file written by an older build would
+ * otherwise survive with the wrong columns and fail at the first query
+ * ("no such column: slot_index"). Round 2 -> Round 3 was exactly that break.
+ */
+const SCHEMA_VERSION = 3;
+
+/** True when the file already holds tables from a different schema version. */
+function isStaleSchema(db: DB): boolean {
+  const version = Number(db.pragma('user_version', { simple: true }));
+  if (version === SCHEMA_VERSION) return false;
+  const existing = db
+    .prepare(
+      `SELECT count(*) AS n FROM sqlite_master
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+    )
+    .get() as { n: number };
+  return existing.n > 0;
+}
+
+/**
+ * Move an incompatible database aside rather than deleting it. Event data is
+ * never silently destroyed: the operator keeps a copy they can inspect.
+ */
+function archive(file: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const target = `${file}.v2-${stamp}.bak`;
+  renameSync(file, target);
+  for (const suffix of ['-wal', '-shm']) {
+    if (existsSync(file + suffix)) renameSync(file + suffix, target + suffix);
+  }
+  return target;
+}
+
+function connect(file: string): DB {
+  const db = new Database(file);
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  db.pragma('foreign_keys = ON');
+  return db;
+}
+
 export function openDatabase(options: OpenOptions): DB {
   if (options.file !== ':memory:') {
     mkdirSync(dirname(resolve(options.file)), { recursive: true });
   }
-  const db = new Database(options.file);
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('foreign_keys = ON');
+
+  let db = connect(options.file);
+
+  if (options.file !== ':memory:' && isStaleSchema(db)) {
+    db.close();
+    const moved = archive(resolve(options.file));
+    console.warn(
+      `Database was written by an incompatible earlier version.
+` +
+        `  Archived to: ${moved}
+` +
+        `  Starting a fresh Round 3 database.`,
+    );
+    db = connect(options.file);
+  }
+
   db.exec(loadSchema());
+  db.pragma(`user_version = ${SCHEMA_VERSION}`);
   ensureGameStateRow(db);
   return db;
 }

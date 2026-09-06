@@ -17,6 +17,8 @@ interface Args {
   dbFile: string;
   passcode?: string;
   seed?: number;
+  /** --seed replaces the existing field instead of adding to it. */
+  replace?: boolean;
   reset?: boolean;
   help?: boolean;
 }
@@ -46,6 +48,9 @@ function parseArgs(argv: string[]): Args {
         args.seed = Number(next ?? 20);
         if (next && !next.startsWith('--')) i++;
         break;
+      case '--replace':
+        args.replace = true;
+        break;
       case '--reset':
         args.reset = true;
         break;
@@ -66,18 +71,24 @@ CSI CLUB - CODE MARKET  (v${VERSION})
   --port <n>       HTTP + WebSocket port (default 4400)
   --db <path>      SQLite file (default ./data/code-market.db)
   --passcode <s>   Organizer console passcode
-  --seed <n>       Create n demo teams, then exit
+  --seed <n>       Create n demo teams, then exit (adds to any that exist)
+  --replace        With --seed: wipe the existing field first
   --reset          Clear all game data (keeps teams), then exit
   --help           This message
 `;
 
-function banner(port: number, passcode: string, toolchain: Record<string, unknown>): void {
+function banner(
+  port: number,
+  passcode: string,
+  round: number,
+  toolchain: Record<string, unknown>,
+): void {
   const info = connectionInfo(port);
   const line = '='.repeat(64);
   const rows = [
     '',
     line,
-    '   CSI CLUB  -  CODE MARKET   |   ROUND 2   |   OFFLINE LAN MODE',
+    `   CSI CLUB  -  CODE MARKET   |   ROUND ${round}   |   OFFLINE LAN MODE`,
     line,
     '',
     '   PARTICIPANTS   ' + info.participantUrl,
@@ -130,10 +141,28 @@ async function main(): Promise<void> {
 
   if (args.seed !== undefined) {
     const count = Number.isFinite(args.seed) && args.seed > 0 ? args.seed : 20;
-    built.simulator.seedTeams(count, false);
     const repo = built.repo;
-    process.stdout.write(`Created ${count} teams:\n\n`);
-    for (const team of repo.listTeams()) {
+    const existing = repo.listTeams().length;
+
+    // Seeding ADDS to the field. Running it twice is an easy mistake to make
+    // and silently doubles the roster, so say plainly what is about to happen
+    // and how to start clean instead.
+    if (existing > 0 && !args.replace) {
+      process.stdout.write(
+        `\n  ${existing} team(s) already exist. Adding ${count} more.\n` +
+          `  To start from an empty field instead, run:  --seed ${count} --replace\n\n`,
+      );
+    }
+
+    built.simulator.seedTeams(count, Boolean(args.replace));
+
+    const teams = repo.listTeams();
+    process.stdout.write(
+      args.replace
+        ? `Replaced the field with ${teams.length} teams:\n\n`
+        : `Added ${count} team(s). The event now has ${teams.length}:\n\n`,
+    );
+    for (const team of teams) {
       process.stdout.write(`  ${team.id}  ${team.name.padEnd(18)}  join code: ${repo.getJoinCode(team.id)}\n`);
     }
     process.stdout.write('\n');
@@ -142,7 +171,12 @@ async function main(): Promise<void> {
   }
 
   const { port } = await built.listen();
-  banner(port, built.organizerPasscode, built.toolchain as unknown as Record<string, unknown>);
+  banner(
+    port,
+    built.organizerPasscode,
+    built.engine.getConfig().roundNumber,
+    built.toolchain as unknown as Record<string, unknown>,
+  );
 
   const shutdown = async (signal: string) => {
     process.stdout.write(`\n${signal} received - shutting down cleanly.\n`);

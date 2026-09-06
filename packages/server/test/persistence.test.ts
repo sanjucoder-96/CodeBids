@@ -1,3 +1,8 @@
+/**
+ * Persistence and recovery (spec 20, 21): a restart must never re-roll the
+ * sequence or lose an in-flight premium.
+ */
+
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,7 +12,8 @@ import { Repo } from '../src/repo/index.js';
 import { AuthService } from '../src/auth.js';
 import { GameEngine } from '../src/core/engine.js';
 import { CodeRunner } from '../src/core/codeRunner.js';
-import { answerFor, makeHarness, seedTeams, type Harness } from './helpers.js';
+import { answerFor, makeHarness, seedTeams, startRound, type Harness } from './helpers.js';
+import type { Question } from '@code-market/shared';
 
 const SECRET = 'persist-secret';
 const dirs: string[] = [];
@@ -18,7 +24,7 @@ function tempDir(): string {
   return dir;
 }
 
-function bootEngine(file: string): { engine: GameEngine; repo: Repo; close: () => void } {
+function boot(file: string) {
   const db = openDatabase({ file });
   const repo = new Repo(db);
   repo.setMeta('secret', SECRET);
@@ -29,7 +35,7 @@ function bootEngine(file: string): { engine: GameEngine; repo: Repo; close: () =
     secret: SECRET,
     runner: new CodeRunner({ python: null, cpp: null, java: null }),
   });
-  engine.seedChallenges();
+  engine.seedQuestions();
   engine.restoreTimers();
   return {
     engine,
@@ -45,158 +51,206 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('database persistence (spec 36, 52)', () => {
-  it('survives a full server restart mid-round', async () => {
-    const file = join(tempDir(), 'event.db');
+describe('restart recovery', () => {
+  it('keeps the SAME generated sequence across a restart', () => {
+    const file = join(tempDir(), 'seq.db');
 
-    // --- first boot: play part of the round -------------------------------
-    let boot = bootEngine(file);
-    boot.engine.createTeams([
-      { id: 'T01', name: 'ALPHA' },
-      { id: 'T02', name: 'BETA' },
-      { id: 'T03', name: 'GAMMA' },
-    ]);
-    boot.engine.startGame();
-    boot.engine.openChallenge('C01');
-    const challenge = boot.repo.getChallenge('C01');
-    boot.engine.unlockChallenge('T01', 'C01', challenge?.accessKey ?? '');
-    boot.engine.joinChallenge('T01', 'C01');
-    await boot.engine.submitAnswer('T01', 'C01', {
-      kind: 'text',
-      value: challenge?.evaluation.acceptedAnswers?.[0] ?? '',
-    });
-    expect(boot.repo.getTeam('T01')?.capital).toBe(1200);
-    boot.close();
+    let app = boot(file);
+    app.engine.createTeams([{ id: 'T01', name: 'A' }, { id: 'T02', name: 'B' }]);
+    app.engine.generateRound(987654);
+    app.engine.startGame();
+    const before = app.engine.sequence().map((s) => s.questionId);
+    const seed = app.repo.getMeta('sequence_seed');
+    app.close();
 
-    // --- second boot: everything is exactly where it was ------------------
-    boot = bootEngine(file);
-    expect(boot.repo.getTeam('T01')?.capital).toBe(1200);
-    expect(boot.repo.getTeam('T02')?.capital).toBe(1000);
-    expect(boot.engine.gameState().currentChallengeId).toBe('C01');
-    expect(boot.repo.listAttemptsForTeam('T01')).toHaveLength(1);
-    expect(boot.engine.leaderboard()[0]?.teamId).toBe('T01');
-    // Connection flags are reset so nobody shows as a ghost.
-    expect(boot.repo.getTeam('T01')?.connectionStatus).toBe('offline');
-    boot.close();
+    app = boot(file);
+    expect(app.repo.getMeta('sequence_seed')).toBe(seed);
+    expect(app.engine.sequence().map((s) => s.questionId)).toEqual(before);
+    // Re-running generation must not re-roll it.
+    app.engine.generateRound();
+    expect(app.engine.sequence().map((s) => s.questionId)).toEqual(before);
+    app.close();
   });
 
-  it('restores an in-flight premium reclaim across a restart', async () => {
-    const file = join(tempDir(), 'premium.db');
+  it('resumes mid-round with capital, slot and phase intact', async () => {
+    const file = join(tempDir(), 'mid.db');
 
-    let boot = bootEngine(file);
-    boot.engine.createTeams([
+    let app = boot(file);
+    app.engine.createTeams([
       { id: 'T01', name: 'A' },
       { id: 'T02', name: 'B' },
       { id: 'T03', name: 'C' },
     ]);
-    for (const id of ['T01', 'T02', 'T03']) boot.engine.adjustCapital(id, 800, 'headroom');
-    boot.engine.startGame();
-    boot.engine.openChallenge('C04');
-    boot.engine.startAuction('C04');
-    boot.engine.placeBid('T03', 300);
-    boot.engine.placeBid('T02', 400);
-    boot.engine.placeBid('T01', 500);
-    boot.engine.closeAuction();
-    boot.engine.startPremiumAttempt();
-    const c04 = boot.repo.getChallenge('C04');
-    await boot.engine.submitAnswer('T01', 'C04', {
-      kind: 'order',
-      itemIds: [...(c04?.evaluation.correctOrder ?? [])].reverse(),
-    });
+    app.engine.generateRound(31337);
+    app.engine.startGame();
+    app.engine.advance();
+    app.engine.openQuestion();
 
-    const before = boot.engine.currentPremium();
+    const slot = app.engine.currentSlot();
+    const question = app.repo.getQuestion(slot?.questionId as string) as Question;
+    app.engine.unlockQuestion('T01', question.id, question.accessKey);
+    app.engine.joinQuestion('T01', question.id);
+    await app.engine.submitAnswer('T01', question.id, answerFor(question, true));
+
+    const capital = app.repo.getTeam('T01')?.capital as number;
+    expect(capital).toBeGreaterThan(1000);
+    app.close();
+
+    app = boot(file);
+    expect(app.repo.getTeam('T01')?.capital).toBe(capital);
+    expect(app.engine.gameState().slotIndex).toBe(slot?.index);
+    expect(app.engine.gameState().phase).toBe('question_active');
+    expect(app.repo.listAttemptsForTeam('T01')).toHaveLength(1);
+    expect(app.repo.getTeam('T01')?.connectionStatus).toBe('offline');
+    app.close();
+  });
+
+  it('restores an in-flight reclaim offer', async () => {
+    const file = join(tempDir(), 'reclaim.db');
+
+    let app = boot(file);
+    app.engine.createTeams([
+      { id: 'T01', name: 'A' },
+      { id: 'T02', name: 'B' },
+      { id: 'T03', name: 'C' },
+    ]);
+    for (const id of ['T01', 'T02', 'T03']) app.engine.adjustCapital(id, 900, 'headroom');
+    app.engine.generateRound(4242);
+    app.engine.startGame();
+
+    // Walk to the first premium.
+    let slot = null;
+    for (let i = 0; i < 8; i++) {
+      app.engine.advance();
+      slot = app.engine.currentSlot();
+      if (slot?.kind === 'premium') break;
+      app.engine.closeQuestion();
+    }
+    expect(slot?.kind).toBe('premium');
+
+    app.engine.startAuction();
+    app.engine.placeBid('T03', 300);
+    app.engine.placeBid('T02', 400);
+    app.engine.placeBid('T01', 500);
+    app.engine.closeAuction();
+    app.engine.startPremiumAttempt();
+    app.engine.forcePremiumResult('wrong');
+
+    const before = app.engine.currentPremium();
     expect(before?.stage).toBe('reclaim_offer');
     expect(before?.offerTeamId).toBe('T02');
-    boot.close();
+    app.close();
 
-    boot = bootEngine(file);
-    const after = boot.engine.currentPremium();
+    app = boot(file);
+    const after = app.engine.currentPremium();
     expect(after?.stage).toBe('reclaim_offer');
     expect(after?.offerTeamId).toBe('T02');
     expect(after?.offerRisk).toBe(400);
-    expect(after?.ladder.map((e) => e.teamId)).toEqual(['T01', 'T02', 'T03']);
     expect(after?.attemptNumber).toBe(1);
-    // The offer can still be resolved after the restart.
-    boot.engine.resolveReclaim('T02', true);
-    expect(boot.engine.currentPremium()?.activeTeamId).toBe('T02');
-    boot.close();
+    // Still resolvable after the restart.
+    app.engine.resolveReclaim('T02', true);
+    expect(app.engine.currentPremium()?.activeTeamId).toBe('T02');
+    app.close();
   });
 
-  it('keeps the whole transaction ledger and audit log', async () => {
-    const file = join(tempDir(), 'ledger.db');
-    let boot = bootEngine(file);
-    boot.engine.createTeams([{ id: 'T01', name: 'A' }]);
-    boot.engine.adjustCapital('T01', 250, 'bonus');
-    boot.engine.adjustCapital('T01', -100, 'correction');
-    const txCount = boot.repo.listTransactions().length;
-    const auditCount = boot.engine.listAudit().length;
-    boot.close();
+  it('keeps the premium window across a restart', () => {
+    const file = join(tempDir(), 'window.db');
+    let app = boot(file);
+    app.engine.createTeams([{ id: 'T01', name: 'A' }, { id: 'T02', name: 'B' }]);
+    app.engine.generateRound(777);
+    app.engine.startGame();
+    for (let i = 0; i < 8; i++) {
+      app.engine.advance();
+      if (app.engine.currentSlot()?.kind === 'premium') break;
+      app.engine.closeQuestion();
+    }
+    const windowEnd = app.engine.currentPremium()?.windowEndsAt;
+    expect(windowEnd).toBeGreaterThan(Date.now());
+    app.close();
 
-    boot = bootEngine(file);
-    expect(boot.repo.listTransactions()).toHaveLength(txCount);
-    expect(boot.engine.listAudit().length).toBeGreaterThanOrEqual(auditCount);
-    expect(boot.repo.getTeam('T01')?.capital).toBe(1150);
-    boot.close();
+    app = boot(file);
+    expect(app.engine.currentPremium()?.windowEndsAt).toBe(windowEnd);
+    app.close();
   });
 
-  it('creates a restorable backup file', () => {
-    const dir = tempDir();
-    const file = join(dir, 'backup-source.db');
-    const boot = bootEngine(file);
-    boot.engine.createTeams([{ id: 'T01', name: 'A' }]);
-    boot.engine.adjustCapital('T01', 500, 'test');
+  it('keeps the final results after a restart', () => {
+    const file = join(tempDir(), 'podium.db');
+    let app = boot(file);
+    app.engine.createTeams([
+      { id: 'T01', name: 'A' },
+      { id: 'T02', name: 'B' },
+      { id: 'T03', name: 'C' },
+    ]);
+    app.engine.generateRound(1);
+    app.engine.startGame();
+    app.engine.adjustCapital('T02', 800, 'spread');
+    const podium = app.engine.completeGame();
+    app.close();
 
-    const db = openDatabase({ file });
-    const target = backupDatabase(db, file, join(dir, 'backups'));
-    db.close();
-    boot.close();
-
-    expect(existsSync(target)).toBe(true);
-
-    const restored = bootEngine(target);
-    expect(restored.repo.getTeam('T01')?.capital).toBe(1500);
-    restored.close();
+    app = boot(file);
+    expect(app.repo.listFinalResults()).toEqual(podium);
+    expect(app.engine.podium()[0]?.teamId).toBe('T02');
+    app.close();
   });
 
   it('keeps session tokens valid across a restart', () => {
     const file = join(tempDir(), 'sessions.db');
-    let boot = bootEngine(file);
-    boot.engine.createTeams([{ id: 'T01', name: 'A' }]);
-    const code = boot.repo.getJoinCode('T01') as string;
-    const auth1 = new AuthService(boot.repo, SECRET, '1234');
-    const session = auth1.loginTeam(code);
+    let app = boot(file);
+    app.engine.createTeams([{ id: 'T01', name: 'A' }]);
+    const code = app.repo.getJoinCode('T01') as string;
+    const session = new AuthService(app.repo, SECRET, '1234').loginTeam(code);
     expect(session).not.toBeNull();
-    boot.close();
+    app.close();
 
-    boot = bootEngine(file);
-    const auth2 = new AuthService(boot.repo, SECRET, '1234');
-    const identity = auth2.verify(session?.token as string);
+    app = boot(file);
+    const identity = new AuthService(app.repo, SECRET, '1234').verify(session?.token as string);
     expect(identity).toMatchObject({ role: 'participant', teamId: 'T01' });
-    boot.close();
+    app.close();
+  });
+
+  it('creates a restorable backup', () => {
+    const dir = tempDir();
+    const file = join(dir, 'src.db');
+    const app = boot(file);
+    app.engine.createTeams([{ id: 'T01', name: 'A' }]);
+    app.engine.adjustCapital('T01', 500, 'test');
+
+    const db = openDatabase({ file });
+    const target = backupDatabase(db, file, join(dir, 'backups'));
+    db.close();
+    app.close();
+
+    expect(existsSync(target)).toBe(true);
+    const restored = boot(target);
+    expect(restored.repo.getTeam('T01')?.capital).toBe(1500);
+    restored.close();
   });
 });
 
-describe('reset (spec 52)', () => {
+describe('reset', () => {
   let h: Harness;
   afterEach(() => h?.close());
 
-  it('clears game data but keeps teams and restores starting capital', async () => {
+  it('clears the sequence and game data but keeps teams', async () => {
     h = makeHarness();
-    seedTeams(h, 3);
-    h.engine.startGame();
-    h.engine.openChallenge('C01');
-    h.engine.unlockChallenge('T01', 'C01', 'MKT-4417');
-    h.engine.joinChallenge('T01', 'C01');
-    await h.engine.submitAnswer('T01', 'C01', answerFor(h, 'C01', true));
-    expect(h.repo.getTeam('T01')?.capital).toBe(1200);
+    startRound(h, 3);
+    h.engine.advance();
+    h.engine.openQuestion();
+    const question = h.repo.getQuestion(
+      h.engine.currentSlot()?.questionId as string,
+    ) as Question;
+    h.engine.unlockQuestion('T01', question.id, question.accessKey);
+    h.engine.joinQuestion('T01', question.id);
+    await h.engine.submitAnswer('T01', question.id, answerFor(question, true));
 
     h.engine.resetGame(true);
 
     expect(h.repo.listTeams()).toHaveLength(3);
     expect(h.repo.getTeam('T01')?.capital).toBe(1000);
     expect(h.repo.listAttempts()).toHaveLength(0);
-    expect(h.engine.gameState().phase).toBe('lobby');
-    expect(h.engine.gameState().currentChallengeId).toBeNull();
+    expect(h.repo.listSequence()).toHaveLength(0);
+    expect(h.engine.gameState().phase).toBe('idle');
+    expect(h.engine.gameState().slotIndex).toBe(0);
   });
 
   it('can wipe teams entirely', () => {
@@ -204,6 +258,48 @@ describe('reset (spec 52)', () => {
     seedTeams(h, 3);
     h.engine.resetGame(false);
     expect(h.repo.listTeams()).toHaveLength(0);
-    expect(h.engine.leaderboard()).toHaveLength(0);
+  });
+});
+
+describe('ledger integrity', () => {
+  let h: Harness;
+  afterEach(() => h?.close());
+
+  it('every team capital equals the sum of its transactions', async () => {
+    h = makeHarness();
+    startRound(h, 5);
+    for (let block = 0; block < 2; block++) {
+      h.engine.advance();
+      const slot = h.engine.currentSlot();
+      if (!slot) break;
+      if (slot.kind === 'normal') {
+        h.engine.openQuestion();
+        const question = h.repo.getQuestion(slot.questionId) as Question;
+        for (const id of ['T01', 'T02', 'T03']) {
+          h.engine.unlockQuestion(id, question.id, question.accessKey);
+          h.engine.joinQuestion(id, question.id);
+          await h.engine.submitAnswer(id, question.id, answerFor(question, id !== 'T02'));
+        }
+        h.engine.closeQuestion();
+      }
+    }
+
+    for (const team of h.repo.listTeams()) {
+      const txs = h.repo.listTransactionsForTeam(team.id);
+      const sum = txs.reduce((total, t) => total + t.amount, 0);
+      expect(sum, `${team.id} ledger`).toBe(team.capital);
+      let running = 0;
+      for (const tx of txs) {
+        running += tx.amount;
+        expect(tx.balanceAfter).toBe(running);
+      }
+    }
+  });
+
+  it('never lets capital fall below the floor', async () => {
+    h = makeHarness();
+    startRound(h, 3);
+    for (let i = 0; i < 10; i++) h.engine.adjustCapital('T01', -500, 'drain');
+    expect(h.repo.getTeam('T01')?.capital).toBe(0);
   });
 });

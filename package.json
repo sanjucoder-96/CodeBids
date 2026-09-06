@@ -2,7 +2,7 @@
   "name": "code-market",
   "private": true,
   "version": "1.0.0",
-  "description": "CSI Club \u00e2\u20ac\u201d Code Market. Offline-first, LAN-only live competition platform for Round 2.",
+  "description": "CSI Club - Code Market. Offline-first, LAN-only live competition platform for Round 3.",
   "type": "module",
   "engines": {
     "node": ">=20.11"

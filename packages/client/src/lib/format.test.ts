@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
-  categoryLabel,
-  challengeLabel,
+  blockLabel,
   clock,
+  difficultyLabel,
+  domainLabel,
   delta,
   medal,
   money,
+  placeLabel,
   relativeTime,
+  slotLabel,
   timeOfDay,
   typeLabel,
 } from './format.js';
@@ -56,18 +59,27 @@ describe('clock', () => {
 });
 
 describe('labels', () => {
-  it('labels each challenge by its market type', () => {
-    expect(challengeLabel(1, 'market')).toBe('MARKET #01');
-    expect(challengeLabel(4, 'premium')).toBe('PREMIUM #04');
-    expect(challengeLabel(12, 'final_premium')).toBe('FINAL PREMIUM #12');
+  it('names a slot by its block and position', () => {
+    expect(blockLabel(2, 3, 3)).toBe('BLOCK 2 · QUESTION 3 OF 3');
+    expect(slotLabel(2, 3, 'normal')).toBe('B2 Q3');
+    expect(slotLabel(2, 4, 'premium')).toBe('B2 PREM');
   });
 
-  it('humanises categories and question types', () => {
-    expect(categoryLabel('dbms')).toBe('DBMS');
-    expect(categoryLabel('output_prediction')).toBe('Output Prediction');
-    expect(categoryLabel('unknown_thing')).toBe('unknown thing');
+  it('humanises domains, difficulties and question types', () => {
+    expect(domainLabel('databases')).toBe('Databases');
+    expect(domainLabel('output_prediction')).toBe('Output Prediction');
+    expect(domainLabel('unknown_thing')).toBe('unknown thing');
+    expect(difficultyLabel('very_hard')).toBe('VERY HARD');
+    expect(difficultyLabel('easy')).toBe('EASY');
     expect(typeLabel('mcq')).toBe('Single choice');
     expect(typeLabel('true_false')).toBe('True / False');
+  });
+
+  it('renders podium places', () => {
+    expect(placeLabel(1)).toBe('1st');
+    expect(placeLabel(2)).toBe('2nd');
+    expect(placeLabel(3)).toBe('3rd');
+    expect(placeLabel(11)).toBe('11th');
   });
 
   it('renders placings', () => {

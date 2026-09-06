@@ -12,12 +12,12 @@ const SCENARIOS = [
   {
     id: 'market_round',
     label: 'Market round',
-    help: 'Every team answers the open market challenge. Requires a market challenge to be open.',
+    help: 'Every team answers the open question. Requires a normal question to be open.',
   },
   {
     id: 'premium_auction',
     label: 'Premium auction',
-    help: 'Full auction with outbids, a winner, and an attempt. Requires a premium challenge to be open.',
+    help: 'Full auction with outbids, a winner, and an attempt. Requires a premium to be open.',
   },
   {
     id: 'reclaim_chain',
@@ -37,7 +37,7 @@ const SCENARIOS = [
   {
     id: 'full_round',
     label: 'Full round',
-    help: 'End-to-end dry run of all 12 challenges. Takes a couple of minutes.',
+    help: 'End-to-end dry run of the whole generated sequence. Takes a couple of minutes.',
   },
 ] as const;
 

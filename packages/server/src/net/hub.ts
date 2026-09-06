@@ -209,19 +209,19 @@ export class Hub {
     const teamId = client.teamId;
 
     switch (type) {
-      case CLIENT_COMMANDS.UNLOCK_CHALLENGE:
-        this.engine.unlockChallenge(teamId, String(data.challengeId), String(data.accessKey ?? ''));
+      case CLIENT_COMMANDS.UNLOCK_QUESTION:
+        this.engine.unlockQuestion(teamId, String(data.questionId), String(data.accessKey ?? ''));
         return undefined;
-      case CLIENT_COMMANDS.JOIN_CHALLENGE:
-        this.engine.joinChallenge(teamId, String(data.challengeId));
+      case CLIENT_COMMANDS.JOIN_QUESTION:
+        this.engine.joinQuestion(teamId, String(data.questionId));
         return undefined;
-      case CLIENT_COMMANDS.SKIP_CHALLENGE:
-        this.engine.skipChallenge(teamId, String(data.challengeId));
+      case CLIENT_COMMANDS.SKIP_QUESTION:
+        this.engine.skipQuestion(teamId, String(data.questionId));
         return undefined;
       case CLIENT_COMMANDS.SUBMIT_ANSWER:
         return await this.engine.submitAnswer(
           teamId,
-          String(data.challengeId),
+          String(data.questionId),
           data.submission as never,
         );
       case CLIENT_COMMANDS.RECLAIM_RESPONSE:
@@ -246,17 +246,25 @@ export class Hub {
         engine.resumeGame();
         return undefined;
       case CLIENT_COMMANDS.COMPLETE_GAME:
-        engine.completeGame();
+        return engine.completeGame();
+      case CLIENT_COMMANDS.ADVANCE:
+        return engine.advance();
+      case CLIENT_COMMANDS.OPEN_SLOT:
+        return engine.openSlot(Number(data.slotIndex));
+      case CLIENT_COMMANDS.OPEN_QUESTION:
+        return engine.openQuestion();
+      case CLIENT_COMMANDS.CLOSE_QUESTION:
+        return engine.closeQuestion();
+      case CLIENT_COMMANDS.START_STRATEGY:
+        return engine.startStrategyPhase();
+      case CLIENT_COMMANDS.SKIP_STRATEGY:
+        engine.endStrategyPhase();
         return undefined;
+      case CLIENT_COMMANDS.REVEAL_PODIUM:
+        return engine.revealPodium();
       case CLIENT_COMMANDS.RESET_GAME:
         this.simulator.stop();
         engine.resetGame(Boolean(data.keepTeams));
-        return undefined;
-      case CLIENT_COMMANDS.OPEN_CHALLENGE:
-        engine.openChallenge(String(data.challengeId));
-        return undefined;
-      case CLIENT_COMMANDS.CLOSE_CHALLENGE:
-        engine.closeChallenge(String(data.challengeId));
         return undefined;
       case CLIENT_COMMANDS.START_TIMER:
         engine.startTimer(Number(data.seconds), String(data.label ?? 'TIMER'));
@@ -268,7 +276,6 @@ export class Hub {
       /* auction */
       case CLIENT_COMMANDS.START_AUCTION:
         return engine.startAuction(
-          String(data.challengeId),
           data.startingBid === undefined ? undefined : Number(data.startingBid),
           data.increment === undefined ? undefined : Number(data.increment),
         );

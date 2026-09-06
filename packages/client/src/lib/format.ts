@@ -26,19 +26,30 @@ export function timeOfDay(ts: number): string {
     .join(':');
 }
 
-export function challengeLabel(index: number, marketType: string): string {
-  const number = String(index).padStart(2, '0');
-  if (marketType === 'final_premium') return `FINAL PREMIUM #${number}`;
-  if (marketType === 'premium') return `PREMIUM #${number}`;
-  return `MARKET #${number}`;
+/** "BLOCK 2 · QUESTION 3 OF 3" - the participant's sense of place. */
+export function blockLabel(
+  blockNumber: number,
+  positionInBlock: number,
+  questionsPerBlock: number,
+): string {
+  return `BLOCK ${blockNumber} · QUESTION ${positionInBlock} OF ${questionsPerBlock}`;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
+/** Short form for dense rows: "B2 Q3" or "B2 PREM". */
+export function slotLabel(
+  blockNumber: number,
+  positionInBlock: number,
+  kind: string,
+): string {
+  return kind === 'premium' ? `B${blockNumber} PREM` : `B${blockNumber} Q${positionInBlock}`;
+}
+
+const DOMAIN_LABELS: Record<string, string> = {
   dsa: 'Data Structures',
   algorithms: 'Algorithms',
   sql: 'SQL',
+  databases: 'Databases',
   os: 'Operating Systems',
-  dbms: 'DBMS',
   networking: 'Networking',
   oop: 'OOP',
   security: 'Security',
@@ -47,10 +58,30 @@ const CATEGORY_LABELS: Record<string, string> = {
   cs_concepts: 'CS Concepts',
   code_analysis: 'Code Analysis',
   output_prediction: 'Output Prediction',
+  web: 'Web',
 };
 
-export function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category.replace(/_/g, ' ');
+export function domainLabel(domain: string): string {
+  return DOMAIN_LABELS[domain] ?? domain.replace(/_/g, ' ');
+}
+
+const DIFFICULTY_LABELS: Record<string, string> = {
+  easy: 'EASY',
+  medium: 'MEDIUM',
+  hard: 'HARD',
+  very_hard: 'VERY HARD',
+};
+
+export function difficultyLabel(difficulty: string): string {
+  return DIFFICULTY_LABELS[difficulty] ?? difficulty.replace(/_/g, ' ').toUpperCase();
+}
+
+/** Ordinal used by the podium: 1st / 2nd / 3rd. */
+export function placeLabel(place: number): string {
+  if (place === 1) return '1st';
+  if (place === 2) return '2nd';
+  if (place === 3) return '3rd';
+  return `${place}th`;
 }
 
 const TYPE_LABELS: Record<string, string> = {

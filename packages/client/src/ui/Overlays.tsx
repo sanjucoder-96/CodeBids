@@ -75,8 +75,8 @@ const FLASH_DURATION: Record<string, number> = {
   wrong: 2200,
   timeout: 2200,
   outbid: 1800,
-  qualified: 2400,
-  rank_up: 1600,
+  strategy: 2600,
+  final_stretch: 3000,
 };
 
 export function Flash() {

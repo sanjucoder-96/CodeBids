@@ -58,7 +58,7 @@ export function Countdown({ endsAt, duration, label, size = 'md', onExpire, tick
   const total = (duration ?? 0) * 1000;
   const progress = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
   const seconds = remaining / 1000;
-  const urgency = seconds <= 10 ? 'critical' : seconds <= 30 ? 'warn' : 'normal';
+  const urgency = urgencyFor(seconds, duration ?? null);
 
   const text = useMemo(() => clock(remaining), [remaining]);
 
@@ -75,4 +75,24 @@ export function Countdown({ endsAt, duration, label, size = 'md', onExpire, tick
       </div>
     </div>
   );
+}
+
+/**
+ * Urgency is relative to the clock's own length.
+ *
+ * A flat "red under ten seconds" rule paints the whole eight-second GET READY
+ * intro in alarm colours, which reads as a fault rather than as urgency. A long
+ * solve timer still turns red in its final ten seconds; a short one turns red
+ * only in its final quarter.
+ */
+export function urgencyFor(
+  secondsLeft: number,
+  duration: number | null,
+): 'normal' | 'warn' | 'critical' {
+  const total = duration ?? 0;
+  const critical = total > 0 ? Math.min(10, total * 0.25) : 10;
+  const warn = total > 0 ? Math.min(30, total * 0.5) : 30;
+  if (secondsLeft <= critical) return 'critical';
+  if (secondsLeft <= warn) return 'warn';
+  return 'normal';
 }

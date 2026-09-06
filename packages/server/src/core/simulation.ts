@@ -1,17 +1,17 @@
 /**
- * Simulation / demo mode (spec section 42).
+ * Simulation / demo mode.
  *
- * The point of this module is to make the ANIMATIONS testable without twenty
- * volunteers: it can seed teams, drive a full premium auction with outbids,
- * force a reclaim chain, and fire rapid capital changes that produce genuine
- * rank swaps (the "team 7 jumps from rank 12 to rank 3" case).
+ * Exists to make the ANIMATIONS and the new block structure testable without
+ * twenty volunteers: it can seed teams, play a whole block, drive a full
+ * premium auction with outbids, force a reclaim chain, run the strategy phase,
+ * and fire rapid capital changes that produce genuine rank swaps.
  *
- * It drives the real engine through the real code paths - nothing here writes
- * to the database directly, so a simulated round is indistinguishable from a
- * played one in the audit log (every entry is tagged `sim: true`).
+ * Everything drives the real engine through the real code paths, so a simulated
+ * round is indistinguishable from a played one (each run is tagged `sim: true`).
  */
 
-import { mulberry32, pick, padTeamNumber, maxBid, isPremiumType } from '@code-market/shared';
+import { mulberry32, padTeamNumber, pick, maxBid } from '@code-market/shared';
+import type { Question, SubmissionValue } from '@code-market/shared';
 import type { GameEngine } from './engine.js';
 import { EngineError } from './engine.js';
 
@@ -27,9 +27,11 @@ const TEAM_NAMES = [
 ];
 
 export type Scenario =
-  | 'market_round'
+  | 'question'
+  | 'block'
   | 'premium_auction'
   | 'reclaim_chain'
+  | 'strategy'
   | 'rank_swap'
   | 'chaos'
   | 'full_round';
@@ -56,7 +58,6 @@ export class Simulator {
     this.running = false;
   }
 
-  /** Create N simulated teams with recognisable names. */
   seedTeams(count: number, replace: boolean): { created: number } {
     const n = Math.max(1, Math.min(60, Math.floor(count)));
     if (replace) this.engine.resetGame(false);
@@ -82,14 +83,20 @@ export class Simulator {
 
     try {
       switch (scenario as Scenario) {
-        case 'market_round':
-          actions = await this.simulateMarketRound(notes);
+        case 'question':
+          actions = await this.simulateQuestion(notes);
+          break;
+        case 'block':
+          actions = await this.simulateBlock(notes);
           break;
         case 'premium_auction':
-          actions = await this.simulatePremiumAuction(notes, false);
+          actions = await this.simulatePremium(notes, false);
           break;
         case 'reclaim_chain':
-          actions = await this.simulatePremiumAuction(notes, true);
+          actions = await this.simulatePremium(notes, true);
+          break;
+        case 'strategy':
+          actions = await this.simulateStrategy(notes);
           break;
         case 'rank_swap':
           actions = await this.simulateRankSwap(notes, intensity);
@@ -113,56 +120,79 @@ export class Simulator {
 
   /* --- scenarios ----------------------------------------------------- */
 
-  /** Every team joins the open market challenge; ~60% answer correctly. */
-  private async simulateMarketRound(notes: string[]): Promise<number> {
-    const challenge = this.currentChallenge();
-    if (!challenge || isPremiumType(challenge.marketType)) {
-      throw new EngineError('no_market', 'Open a market challenge first');
+  /** Every team answers the currently open normal question. */
+  private async simulateQuestion(notes: string[]): Promise<number> {
+    const slot = this.engine.currentSlot();
+    if (!slot || slot.kind !== 'normal') {
+      throw new EngineError('no_question', 'Open a normal question first');
     }
+    if (this.engine.gameState().phase === 'question_intro') this.safe(() => this.engine.openQuestion());
+
+    const question = this.engine.getRepo().getQuestion(slot.questionId) as Question;
     const teams = this.engine.getRepo().listTeams();
     let actions = 0;
 
     for (const team of teams) {
       if (this.cancelled) break;
-      const roll = this.rand();
-      if (roll < 0.1) {
-        this.safe(() => this.engine.skipChallenge(team.id, challenge.id));
+      if (this.rand() < 0.1) {
+        this.safe(() => this.engine.skipQuestion(team.id, question.id));
         actions++;
         continue;
       }
       this.safe(() => {
-        this.engine.unlockChallenge(team.id, challenge.id, challenge.accessKey);
-        this.engine.joinChallenge(team.id, challenge.id);
+        this.engine.unlockQuestion(team.id, question.id, question.accessKey);
+        this.engine.joinQuestion(team.id, question.id);
       });
       const correct = this.rand() < 0.6;
       await this.safeAsync(() =>
-        this.engine.submitAnswer(team.id, challenge.id, this.answerFor(challenge, correct)),
+        this.engine.submitAnswer(team.id, question.id, this.answerFor(question, correct)),
       );
       actions++;
       await this.tick(20);
     }
-    notes.push(`Simulated ${actions} market responses for ${challenge.id}`);
+    notes.push(`${actions} responses for ${question.id} (${question.difficulty}, ${question.domain})`);
+    return actions;
+  }
+
+  /** Play a whole block: three normal questions, then the premium. */
+  private async simulateBlock(notes: string[]): Promise<number> {
+    let actions = 0;
+    for (let i = 0; i < 8 && !this.cancelled; i++) {
+      const slot = this.engine.currentSlot();
+      if (!slot) {
+        this.safe(() => this.engine.advance());
+        continue;
+      }
+      if (slot.kind === 'premium') {
+        actions += await this.simulatePremium(notes, this.rand() < 0.4);
+        this.safe(() => this.engine.closePremium());
+        break;
+      }
+      actions += await this.simulateQuestion(notes);
+      this.safe(() => this.engine.closeQuestion());
+      this.safe(() => this.engine.advance());
+      await this.tick(150);
+    }
+    notes.push('Block complete');
     return actions;
   }
 
   /** A believable ascending auction with several bidders and outbids. */
-  private async simulatePremiumAuction(notes: string[], forceReclaim: boolean): Promise<number> {
-    const challenge = this.currentChallenge();
-    if (!challenge || !isPremiumType(challenge.marketType)) {
-      throw new EngineError('no_premium', 'Open a premium challenge first');
+  private async simulatePremium(notes: string[], forceReclaim: boolean): Promise<number> {
+    const slot = this.engine.currentSlot();
+    if (!slot || slot.kind !== 'premium') {
+      throw new EngineError('no_premium', 'Open a premium first');
     }
 
     let view = this.engine.currentAuctionView();
-    if (!view || view.auction.status === 'closed') {
-      view = this.engine.startAuction(challenge.id);
-    }
-    notes.push(`Auction open on ${challenge.id} at ${view.auction.startingBid}`);
+    if (!view || view.auction.status === 'closed') view = this.engine.startAuction();
+    notes.push(`Auction open on ${slot.questionId} at ${view.auction.startingBid}`);
 
-    const config = this.engine.getConfig();
+    const opening = view.auction.startingBid;
     const contenders = this.engine
       .getRepo()
       .listTeams()
-      .filter((t) => maxBid(t.capital, t.protectedReserve) >= view!.auction.startingBid)
+      .filter((t) => maxBid(t.capital, t.protectedReserve) >= opening)
       .sort(() => this.rand() - 0.5)
       .slice(0, Math.max(2, Math.min(6, Math.floor(this.rand() * 5) + 2)));
 
@@ -170,9 +200,8 @@ export class Simulator {
 
     let actions = 0;
     let rounds = 0;
-    const maxRounds = 12;
 
-    while (rounds < maxRounds && !this.cancelled) {
+    while (rounds < 12 && !this.cancelled) {
       const current = this.engine.currentAuctionView();
       if (!current) break;
       const bidder = pick(
@@ -186,11 +215,9 @@ export class Simulator {
         rounds++;
         continue;
       }
-      const result = this.engine.placeBid(bidder.id);
-      if (result.accepted) actions++;
+      if (this.engine.placeBid(bidder.id).accepted) actions++;
       rounds++;
       await this.tick(120);
-      // Bidding cools off as the price climbs.
       if (this.rand() < 0.18 + rounds * 0.05) break;
     }
 
@@ -205,27 +232,24 @@ export class Simulator {
         ? `SOLD to ${closed.auction.winnerTeamId} at ${closed.auction.winningAmount}`
         : 'Auction closed unsold',
     );
-
     if (!closed.auction.winnerTeamId) return actions;
 
     await this.tick(400);
     this.engine.startPremiumAttempt();
     actions++;
 
-    const premium = this.engine.currentPremium();
-    const attempter = premium?.activeTeamId;
+    const question = this.engine.getRepo().getQuestion(slot.questionId) as Question;
+    const attempter = this.engine.currentPremium()?.activeTeamId;
     if (!attempter) return actions;
 
     const shouldFail = forceReclaim || this.rand() < 0.45;
     await this.safeAsync(() =>
-      this.engine.submitAnswer(attempter, challenge.id, this.answerFor(challenge, !shouldFail)),
+      this.engine.submitAnswer(attempter, question.id, this.answerFor(question, !shouldFail)),
     );
     actions++;
     notes.push(`${attempter} attempt 1 ${shouldFail ? 'FAILED' : 'CORRECT'}`);
-
     if (!shouldFail) return actions;
 
-    // Walk the reclaim ladder: first candidate declines, next accepts.
     let guard = 0;
     while (guard++ < 6 && !this.cancelled) {
       const state = this.engine.currentPremium();
@@ -243,7 +267,7 @@ export class Simulator {
         if (active) {
           const ok = this.rand() < 0.55;
           await this.safeAsync(() =>
-            this.engine.submitAnswer(active, challenge.id, this.answerFor(challenge, ok)),
+            this.engine.submitAnswer(active, question.id, this.answerFor(question, ok)),
           );
           notes.push(`${active} attempt 2 ${ok ? 'CORRECT' : 'FAILED'}`);
           actions++;
@@ -251,13 +275,19 @@ export class Simulator {
         break;
       }
     }
-    if (config.reclaimAutoDecline) notes.push('Reclaim auto-decline was armed');
     return actions;
   }
 
+  /** Show the 40-second strategy phase on the projector. */
+  private async simulateStrategy(notes: string[]): Promise<number> {
+    this.engine.startStrategyPhase();
+    notes.push(`Strategy phase running for ${this.engine.getConfig().strategyWindowSeconds}s`);
+    return 1;
+  }
+
   /**
-   * The animation torture test: pushes a low-ranked team all the way up through
-   * the field in small steps so the projector must physically move rows.
+   * The animation torture test: pushes a low-ranked team all the way up so the
+   * projector must physically move rows.
    */
   private async simulateRankSwap(notes: string[], intensity: number): Promise<number> {
     const rows = this.engine.leaderboard();
@@ -268,8 +298,7 @@ export class Simulator {
     if (!target || !leader) return 0;
 
     const steps = Math.max(4, Math.min(12, Math.round(4 * Math.max(1, intensity))));
-    const gap = leader.capital - target.capital + 150;
-    const step = Math.ceil(gap / steps);
+    const step = Math.ceil((leader.capital - target.capital + 150) / steps);
 
     let actions = 0;
     for (let i = 0; i < steps && !this.cancelled; i++) {
@@ -292,8 +321,7 @@ export class Simulator {
     for (let i = 0; i < bursts && !this.cancelled; i++) {
       const team = pick(teams, this.rand);
       const magnitude = Math.round((this.rand() * 400 + 100) / 50) * 50;
-      const sign = this.rand() < 0.58 ? 1 : -1;
-      this.engine.adjustCapital(team.id, magnitude * sign, 'Chaos mode');
+      this.engine.adjustCapital(team.id, magnitude * (this.rand() < 0.58 ? 1 : -1), 'Chaos mode');
       actions++;
       await this.tick(this.rand() < 0.3 ? 40 : 180);
     }
@@ -301,95 +329,99 @@ export class Simulator {
     return actions;
   }
 
-  /** End-to-end dry run of the whole 12-challenge sequence. */
+  /** End-to-end dry run of the whole generated sequence. */
   private async simulateFullRound(notes: string[]): Promise<number> {
-    const challenges = this.engine.listChallenges();
     let actions = 0;
-
     this.safe(() => this.engine.startGame());
 
-    for (const challenge of challenges) {
-      if (this.cancelled) break;
-      this.engine.openChallenge(challenge.id);
-      actions++;
-      if (isPremiumType(challenge.marketType)) {
-        actions += await this.simulatePremiumAuction(notes, this.rand() < 0.4);
-        this.safe(() => this.engine.closePremium());
-      } else {
-        actions += await this.simulateMarketRound(notes);
-        this.engine.closeChallenge(challenge.id);
+    const total = this.engine.sequence().length;
+    let handled = 0;
+
+    for (let i = 0; i < total * 2 && !this.cancelled; i++) {
+      // The strategy phase advances by itself, so only advance when the
+      // current slot has already been played. Re-entering a settled slot would
+      // try to re-auction a premium that is already closed.
+      if (this.engine.gameState().slotIndex === handled) {
+        this.safe(() => this.engine.advance());
       }
-      await this.tick(250);
+      if (this.engine.gameState().phase === 'final_results') break;
+
+      const slot = this.engine.currentSlot();
+      if (!slot || slot.index === handled) break;
+      handled = slot.index;
+      actions++;
+
+      if (slot.kind === 'premium') {
+        actions += await this.simulatePremium(notes, this.rand() < 0.4);
+        this.safe(() => this.engine.closePremium());
+        // Every premium is followed by the strategy phase (spec section 10),
+        // which advances into the next block when it ends.
+        this.safe(() => this.engine.startStrategyPhase());
+        this.safe(() => this.engine.fireTimer('strategy'));
+        const after = this.engine.currentSlot();
+        if (after) handled = after.index - 1;
+      } else {
+        actions += await this.simulateQuestion(notes);
+        this.safe(() => this.engine.closeQuestion());
+      }
+      await this.tick(120);
     }
 
     this.safe(() => this.engine.completeGame());
-    notes.push(`Full round simulated across ${challenges.length} challenges`);
+    notes.push(`Full round simulated across ${total} slots`);
     return actions;
   }
 
   /* --- helpers --------------------------------------------------------- */
 
-  private currentChallenge() {
-    const state = this.engine.gameState();
-    return state.currentChallengeId
-      ? this.engine.getRepo().getChallenge(state.currentChallengeId)
-      : null;
-  }
-
   /** Build a submission that is deliberately correct or deliberately wrong. */
-  private answerFor(
-    challenge: ReturnType<GameEngine['listChallenges']>[number],
-    correct: boolean,
-  ): never {
-    const evaluation = challenge.evaluation;
-    const wrongText = '___simulated_wrong___';
+  private answerFor(question: Question, correct: boolean): SubmissionValue {
+    const e = question.evaluation;
 
-    switch (challenge.type) {
+    switch (question.type) {
       case 'mcq': {
-        const right = evaluation.correctOptionIds?.[0] ?? 'a';
-        const options = challenge.question.options ?? [];
+        const right = e.correctOptionIds?.[0] ?? 'a';
+        const options = question.question.options ?? [];
         const wrong = options.find((o) => o.id !== right)?.id ?? 'zz';
-        return { kind: 'choice', optionIds: [correct ? right : wrong] } as never;
+        return { kind: 'choice', optionIds: [correct ? right : wrong] };
       }
       case 'multi': {
-        const right = evaluation.correctOptionIds ?? [];
+        const right = e.correctOptionIds ?? [];
         return {
           kind: 'choice',
           optionIds: correct ? right : right.slice(0, Math.max(0, right.length - 1)),
-        } as never;
+        };
       }
       case 'true_false':
-        return {
-          kind: 'boolean',
-          value: correct ? Boolean(evaluation.correctBoolean) : !evaluation.correctBoolean,
-        } as never;
+        return { kind: 'boolean', value: correct ? Boolean(e.correctBoolean) : !e.correctBoolean };
       case 'numeric':
         return {
           kind: 'number',
-          value: correct ? (evaluation.correctNumber ?? 0) : (evaluation.correctNumber ?? 0) + 7,
-        } as never;
+          value: correct ? (e.correctNumber ?? 0) : (e.correctNumber ?? 0) + 7,
+        };
       case 'ordering': {
-        const order = evaluation.correctOrder ?? [];
-        const scrambled = [...order].reverse();
-        return { kind: 'order', itemIds: correct ? order : scrambled } as never;
+        const order = e.correctOrder ?? [];
+        return { kind: 'order', itemIds: correct ? order : [...order].reverse() };
       }
       case 'matching': {
-        const pairs = evaluation.correctPairs ?? {};
-        if (correct) return { kind: 'pairs', pairs } as never;
+        const pairs = e.correctPairs ?? {};
+        if (correct) return { kind: 'pairs', pairs };
         const keys = Object.keys(pairs);
         const values = Object.values(pairs);
         const swapped: Record<string, string> = {};
         keys.forEach((key, index) => {
           swapped[key] = values[(index + 1) % values.length] ?? '';
         });
-        return { kind: 'pairs', pairs: swapped } as never;
+        return { kind: 'pairs', pairs: swapped };
       }
       case 'code':
-        return { kind: 'code', language: 'python', source: correct ? 'print(sum(range(int(input())+1)))' : 'print(0)' } as never;
-      default: {
-        const answer = evaluation.acceptedAnswers?.[0] ?? '';
-        return { kind: 'text', value: correct ? answer : wrongText } as never;
-      }
+        return {
+          kind: 'code',
+          language: 'python',
+          source: correct ? 'print(sum(range(int(input())+1)))' : 'print(0)',
+        };
+      default:
+        return { kind: 'text', value: correct ? (e.acceptedAnswers?.[0] ?? '') : '__wrong__' };
     }
   }
 

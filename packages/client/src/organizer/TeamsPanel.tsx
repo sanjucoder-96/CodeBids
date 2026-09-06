@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../lib/store.js';
 import { money } from '../lib/format.js';
+import type { TeamStats } from '@code-market/shared';
 
 interface TeamRow {
   id: string;
@@ -17,13 +18,7 @@ interface TeamRow {
   joinCode: string;
   seatLabel: string | null;
   volunteer: string | null;
-  stats: {
-    marketCorrect: number;
-    marketAttempted: number;
-    premiumWins: number;
-    premiumCorrect: number;
-    premiumAttempts: number;
-  };
+  stats: TeamStats;
 }
 
 export function TeamsPanel({ token }: { token: string }) {
@@ -135,7 +130,7 @@ export function TeamsPanel({ token }: { token: string }) {
             <span>Team</span>
             <span>Join code</span>
             <span>Capital</span>
-            <span>Market</span>
+            <span>Questions</span>
             <span>Premium</span>
             <span>Status</span>
             <span />
@@ -150,8 +145,9 @@ export function TeamsPanel({ token }: { token: string }) {
               </span>
               <span className="mono teams-table__code">{row.joinCode}</span>
               <span className="num">{money(row.capital, symbol)}</span>
-              <span className="num dim">
-                {row.stats.marketCorrect}/{row.stats.marketAttempted}
+              <span className="num dim" title="Correct of attempted, plus questions sat out">
+                {row.stats.correct}/{row.stats.attempted}
+                {row.stats.skipped > 0 ? ` · ${row.stats.skipped} out` : ''}
               </span>
               <span className="num dim">
                 {row.stats.premiumCorrect}/{row.stats.premiumAttempts} · {row.stats.premiumWins}W

@@ -17,6 +17,7 @@ export function Login({ onLogin }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const authError = useStore((s) => (s.authFailed ? s.error : null));
+  const round = useStore((s) => s.config.roundNumber);
 
   // Explain WHY the team was sent back here (usually an event reset).
   useEffect(() => {
@@ -62,7 +63,7 @@ export function Login({ onLogin }: Props) {
           <h1 className="login__title">
             CODE<span className="login__title-accent">MARKET</span>
           </h1>
-          <div className="login__round">ROUND 2 · CAPITAL · AUCTION · RISK</div>
+          <div className="login__round">ROUND {round} · CAPITAL · AUCTION · RISK</div>
         </div>
 
         <form onSubmit={submit} className="stack" style={{ gap: 'var(--sp-4)' }}>

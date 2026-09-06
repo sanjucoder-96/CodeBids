@@ -6,7 +6,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, type DB } from './db/index.js';
 import { Repo } from './repo/index.js';
@@ -99,7 +99,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     runner,
     ...(options.now ? { now: options.now } : {}),
   });
-  engine.seedChallenges();
+  engine.seedQuestions();
   // A restart must never leave stale "online" flags behind.
   repo.markAllOffline();
   engine.restoreTimers();
@@ -147,19 +147,37 @@ export async function createApp(options: AppOptions): Promise<App> {
       // SPA fallback: every unknown non-API *page* path serves index.html so
       // the organizer and projector deep links work offline without a router.
       //
-      // Asset requests are deliberately excluded. Serving index.html for a
-      // missing .js file produces a baffling "MIME type text/html" error in the
-      // browser (typically after a rebuild, when a cached page asks for a stale
-      // hashed bundle). A clean 404 makes the real problem obvious and lets the
-      // browser fall back to a reload.
+      // Asset requests are deliberately excluded from that fallback. Serving
+      // index.html for a missing .js file produces a baffling "MIME type
+      // text/html" error in the browser. A clean 404 makes the real problem
+      // obvious and lets the browser fall back to a reload.
       app.setNotFoundHandler((request, reply) => {
         const path = request.url.split('?')[0] ?? '';
         const isApi = path.startsWith('/api') || path.startsWith('/ws');
         const isAsset = /\.[a-z0-9]{2,6}$/i.test(path);
-        if (isApi || isAsset) {
+
+        if (isApi) {
           reply.code(404).send({ error: 'not_found', path });
           return;
         }
+
+        if (isAsset) {
+          // `wildcard: false` lets unmatched paths reach this handler, which is
+          // what makes the SPA fallback possible - but it also means the static
+          // plugin only knows the files that existed when it was registered.
+          // Rebuilding the client against a running server would otherwise
+          // serve an index.html naming bundles the server refuses to hand out,
+          // and the page renders blank. Resolve late-arriving files from disk.
+          const onDisk = resolveInside(clientDist, path);
+          if (onDisk) {
+            reply.header('cache-control', 'public, max-age=31536000, immutable');
+            reply.sendFile(path.replace(/^\//, ''));
+            return;
+          }
+          reply.code(404).send({ error: 'not_found', path });
+          return;
+        }
+
         reply.header('cache-control', 'no-cache, no-store, must-revalidate');
         reply.sendFile('index.html');
       });
@@ -199,4 +217,21 @@ export async function createApp(options: AppOptions): Promise<App> {
       db.close();
     },
   };
+}
+
+/**
+ * Resolve a URL path inside `root`, or null if it escapes the directory or is
+ * not a real file. Guards the late-asset fallback against path traversal.
+ */
+export function resolveInside(root: string, urlPath: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(urlPath);
+  } catch {
+    return null;
+  }
+  const target = resolve(root, '.' + (decoded.startsWith('/') ? decoded : '/' + decoded));
+  const base = resolve(root);
+  if (target !== base && !target.startsWith(base + sep)) return null;
+  return existsSync(target) ? target : null;
 }

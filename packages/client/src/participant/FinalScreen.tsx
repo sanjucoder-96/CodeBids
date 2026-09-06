@@ -1,37 +1,57 @@
-/** End of round: the team's final position and whether they advance. */
+/**
+ * End of round (spec section 2). This round decides the winners, so the closing
+ * screen is a result, not a qualification notice.
+ */
 
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { Leaderboard } from '../ui/Leaderboard.js';
-import { money } from '../lib/format.js';
+import { money, placeLabel } from '../lib/format.js';
 import { dramaticReveal, fadeUp } from '../lib/motion.js';
+import { TrophyIcon, MedalIcon } from '../ui/Icons.js';
 
 export function FinalScreen() {
   const me = useStore((s) => s.me);
   const config = useStore((s) => s.config);
   const leaderboard = useStore((s) => s.leaderboard);
+  const podium = useStore((s) => s.podium);
   const symbol = config.currencySymbol;
 
   if (!me) return null;
-  const profit = me.capital - (leaderboard.find((r) => r.teamId === me.teamId)?.startingCapital ?? config.startingCapital);
+
+  const myRow = leaderboard.find((r) => r.teamId === me.teamId);
+  const myPlace = podium?.find((p) => p.teamId === me.teamId)?.place ?? myRow?.podium ?? null;
+  const profit = me.capital - (myRow?.startingCapital ?? config.startingCapital);
 
   return (
     <div className="screen final">
       <motion.div
-        className={`panel panel--pad final__card ${me.qualified ? 'panel--gain' : ''}`}
+        className={`panel panel--pad final__card ${myPlace ? 'panel--premium' : ''}`}
         variants={dramaticReveal}
         initial="hidden"
         animate="show"
       >
-        <div className="eyebrow">Round 2 complete</div>
-        <h2 className="final__verdict" data-qualified={me.qualified}>
-          {me.qualified ? 'YOU QUALIFY FOR ROUND 3' : 'ROUND 2 COMPLETE'}
+        <div className="eyebrow">Round {config.roundNumber} complete</div>
+
+        <motion.span
+          className="final__icon"
+          data-place={myPlace ?? undefined}
+          initial={{ scale: 0.5, opacity: 0, rotate: -12 }}
+          animate={{ scale: 1, opacity: 1, rotate: 0 }}
+          transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 18 }}
+          aria-hidden="true"
+        >
+          {myPlace ? <TrophyIcon size={40} /> : <MedalIcon size={40} />}
+        </motion.span>
+
+        <h2 className="final__verdict" data-place={myPlace ?? undefined}>
+          {myPlace ? `${placeLabel(myPlace).toUpperCase()} PLACE` : 'ROUND COMPLETE'}
         </h2>
 
         <div className="final__grid">
           <div className="metric">
             <span className="metric__label">Final rank</span>
-            <span className="metric__value num">#{me.rank}</span>
+            <span className="metric__value num">#{myRow?.rank ?? me.rank}</span>
           </div>
           <div className="metric" data-accent>
             <span className="metric__label">Final capital</span>
@@ -47,9 +67,12 @@ export function FinalScreen() {
         </div>
 
         <div className="final__stats">
-          <Stat label="Market correct" value={`${me.stats.marketCorrect}/${me.stats.marketAttempted}`} />
+          <Stat label="Questions correct" value={`${me.stats.correct}/${me.stats.attempted}`} />
           <Stat label="Premium wins" value={String(me.stats.premiumWins)} />
-          <Stat label="Premium correct" value={`${me.stats.premiumCorrect}/${me.stats.premiumAttempts}`} />
+          <Stat
+            label="Premium correct"
+            value={`${me.stats.premiumCorrect}/${me.stats.premiumAttempts}`}
+          />
           <Stat label="Total earned" value={money(me.stats.totalEarned, symbol)} />
           <Stat label="Total lost" value={money(me.stats.totalLost, symbol)} />
         </div>
@@ -58,12 +81,11 @@ export function FinalScreen() {
       <motion.div className="panel panel--flush" variants={fadeUp} initial="hidden" animate="show">
         <div className="panel__head">
           <span className="panel__title">Final standings</span>
-          <span className="badge badge--gain">Top {config.qualifiers} advance</span>
+          <span className="badge badge--premium">Top {config.podiumPlaces} win</span>
         </div>
         <div style={{ padding: 'var(--sp-3)' }}>
           <Leaderboard
             rows={leaderboard}
-            qualifiers={config.qualifiers}
             currencySymbol={symbol}
             meId={me.teamId}
             variant="full"

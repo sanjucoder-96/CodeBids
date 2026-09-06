@@ -53,14 +53,14 @@ export function ExportPanel({ token }: { token: string }) {
     }
   }
 
-  const qualified = leaderboard.filter((r) => r.qualified).length;
+  const onPodium = leaderboard.filter((r) => r.podium !== null).length;
 
   return (
     <section className="panel panel--flush">
       <div className="panel__head">
         <span className="panel__title">Results &amp; recovery</span>
-        <span className="badge badge--gain">
-          {qualified}/{config.qualifiers} qualified
+        <span className="badge badge--premium">
+          {onPodium}/{config.podiumPlaces} on the podium
         </span>
       </div>
 

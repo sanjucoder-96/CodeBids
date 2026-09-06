@@ -1,6 +1,6 @@
 /**
- * Core domain types for CSI Club — Code Market.
- * These types are shared verbatim by the server (authority) and every client.
+ * Core domain types for CSI Club — Code Market (Round 3).
+ * Shared verbatim by the server (the authority) and every client.
  */
 
 /* ------------------------------------------------------------------ *
@@ -36,10 +36,11 @@ export interface TeamPublic {
 }
 
 /* ------------------------------------------------------------------ *
- * Challenges
+ * Questions
  * ------------------------------------------------------------------ */
 
-export type MarketType = 'market' | 'premium' | 'final_premium';
+/** A question is either an ordinary one or an auctioned premium. */
+export type QuestionKind = 'normal' | 'premium';
 
 export type ChallengeType =
   | 'mcq'
@@ -52,14 +53,18 @@ export type ChallengeType =
   | 'matching'
   | 'code';
 
-export type Difficulty = 'easy' | 'medium' | 'hard';
+/** Four difficulty tiers; each carries its own solve time from config. */
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'very_hard';
 
-export type ChallengeCategory =
+export const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard', 'very_hard'];
+
+/** Subject area, shown to participants before they commit. */
+export type Domain =
   | 'dsa'
   | 'algorithms'
   | 'sql'
+  | 'databases'
   | 'os'
-  | 'dbms'
   | 'networking'
   | 'oop'
   | 'security'
@@ -67,7 +72,8 @@ export type ChallengeCategory =
   | 'optimization'
   | 'cs_concepts'
   | 'code_analysis'
-  | 'output_prediction';
+  | 'output_prediction'
+  | 'web';
 
 export type CodeLanguage = 'python' | 'cpp' | 'java';
 
@@ -90,44 +96,38 @@ export interface QuestionData {
   /** For code challenges. */
   starterCode?: string;
   languages?: CodeLanguage[];
-  /** Visible sample test cases for code challenges. */
   samples?: { input: string; output: string }[];
   hint?: string;
 }
 
 /** Server-only. Never leaves the server for a participant socket. */
 export interface EvaluationData {
-  /** mcq: option id. multi: option ids. */
   correctOptionIds?: string[];
-  /** true_false */
   correctBoolean?: boolean;
-  /** output / short_text: any accepted answer (normalised comparison). */
   acceptedAnswers?: string[];
   caseSensitive?: boolean;
   ignoreWhitespace?: boolean;
-  /** numeric */
   correctNumber?: number;
   tolerance?: number;
-  /** ordering: correct order of item ids */
   correctOrder?: string[];
-  /** matching: leftId to rightId */
   correctPairs?: Record<string, string>;
-  /** code: test cases executed by the local runner (hidden ones included). */
   testCases?: { input: string; output: string; hidden?: boolean }[];
-  /** Explanation shown after the challenge is resolved. */
   explanation?: string;
 }
 
-export interface Challenge {
-  id: string; // "C01".."C12"
-  index: number; // 1..12 - the fixed sequence position
+/**
+ * A question in the POOL. The pool is not the running order: the server draws a
+ * concrete sequence from it at game start (see SequenceSlot).
+ */
+export interface Question {
+  id: string;
+  kind: QuestionKind;
   title: string;
-  category: ChallengeCategory;
+  domain: Domain;
   type: ChallengeType;
   difficulty: Difficulty;
-  marketType: MarketType;
-  timeLimit: number; // seconds
-  /** Optional per-challenge economy override for market challenges. */
+  /** Solve time in seconds. Derived from difficulty unless overridden. */
+  timeLimit: number;
   rewardOverride?: number;
   penaltyOverride?: number;
   question: QuestionData;
@@ -135,26 +135,59 @@ export interface Challenge {
   accessKey: string;
 }
 
-/** What a participant client receives. */
-export interface ChallengePublic {
+/**
+ * What a client receives. The body is withheld until the team is entitled to
+ * see it, which is what `revealed` reports.
+ */
+export interface QuestionPublic {
   id: string;
-  index: number;
+  kind: QuestionKind;
   title: string;
-  category: ChallengeCategory;
+  domain: Domain;
   type: ChallengeType;
   difficulty: Difficulty;
-  marketType: MarketType;
   timeLimit: number;
-  question: QuestionData;
-  /**
-   * False while the question body is withheld. Participants see a PREVIEW
-   * (category, difficulty, reward, penalty) and make the risk decision before
-   * the question is revealed to them.
-   */
+  /** Position in the generated round, 1-based. */
+  slotIndex: number;
+  blockNumber: number;
+  positionInBlock: number;
+  /** False while the question body is withheld. */
   revealed: boolean;
-  /** Potential reward/penalty for market challenges, precomputed by the server. */
+  question: QuestionData;
   reward?: number;
   penalty?: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * The generated sequence
+ * ------------------------------------------------------------------ */
+
+/**
+ * One position in the round. The server generates the whole list once from a
+ * persisted seed, so a restart or a reconnect always yields the same order.
+ */
+export interface SequenceSlot {
+  /** 1-based position across the whole round. */
+  index: number;
+  /** 1-based block number. */
+  blockNumber: number;
+  /** 1-based position inside the block; premium is always last. */
+  positionInBlock: number;
+  kind: QuestionKind;
+  questionId: string;
+  state: 'pending' | 'active' | 'complete';
+}
+
+/** Sequence slot enriched with the public facts a client may see. */
+export interface SequenceEntry extends SequenceSlot {
+  title: string;
+  domain: Domain;
+  difficulty: Difficulty;
+  timeLimit: number;
+  /** True for the final premium of the round. */
+  isFinalPremium: boolean;
+  /** True when this normal question falls inside the leaderboard blackout. */
+  inFinalStretch: boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -175,7 +208,6 @@ export type AttemptResult = 'correct' | 'wrong' | 'timeout' | 'skipped' | 'decli
 export interface EvaluationOutcome {
   correct: boolean;
   detail?: string;
-  /** For code challenges. */
   testsPassed?: number;
   testsTotal?: number;
 }
@@ -205,7 +237,8 @@ export interface Bid {
 
 export interface Auction {
   id: number;
-  challengeId: string;
+  questionId: string;
+  slotIndex: number;
   status: AuctionStatus;
   startingBid: number;
   increment: number;
@@ -240,6 +273,7 @@ export interface LadderEntry {
 
 export type PremiumStage =
   | 'idle'
+  | 'intro'
   | 'auction'
   | 'sold'
   | 'attempt_1'
@@ -256,41 +290,63 @@ export type PremiumOutcome =
   | null;
 
 export interface PremiumState {
-  challengeId: string;
+  questionId: string;
+  slotIndex: number;
   stage: PremiumStage;
   auctionId: number | null;
   ladder: LadderEntry[];
-  /** Team currently authorised to attempt. */
   activeTeamId: string | null;
   activeRisk: number | null;
   attemptNumber: 0 | 1 | 2;
-  /** Team currently being offered a reclaim. */
   offerTeamId: string | null;
   offerRisk: number | null;
   offerDeadline: number | null;
   failedTeamId: string | null;
   outcome: PremiumOutcome;
+  /** Wall-clock end of the whole 7-minute premium window. */
+  windowEndsAt: number | null;
 }
 
 /* ------------------------------------------------------------------ *
- * Game state
+ * Game state machine
  * ------------------------------------------------------------------ */
 
 export type GamePhase =
-  | 'lobby'
-  | 'market'
-  | 'auction'
-  | 'premium_attempt'
-  | 'premium_reclaim'
-  | 'result'
-  | 'paused'
-  | 'final'
-  | 'complete';
+  | 'idle'
+  | 'question_intro'
+  | 'question_active'
+  | 'question_result'
+  | 'premium_intro'
+  | 'auction_active'
+  | 'premium_authorized'
+  | 'premium_solving'
+  | 'premium_result'
+  | 'reclaim'
+  | 'strategy_phase'
+  | 'final_results'
+  | 'completed'
+  | 'paused';
+
+export const PHASE_LABELS: Record<GamePhase, string> = {
+  idle: 'Lobby',
+  question_intro: 'Next challenge',
+  question_active: 'Question live',
+  question_result: 'Results',
+  premium_intro: 'Premium incoming',
+  auction_active: 'Auction',
+  premium_authorized: 'Winner authorised',
+  premium_solving: 'Premium attempt',
+  premium_result: 'Premium result',
+  reclaim: 'Reclaim',
+  strategy_phase: 'Strategy phase',
+  final_results: 'Final results',
+  completed: 'Complete',
+  paused: 'Paused',
+};
 
 export interface TimerState {
   /** Wall-clock ms when the timer ends. Null when no timer runs. */
   endsAt: number | null;
-  /** Total duration in seconds, for progress rendering. */
   duration: number | null;
   label: string | null;
 }
@@ -299,17 +355,24 @@ export interface GameState {
   phase: GamePhase;
   /** Phase to return to when un-pausing. */
   resumePhase: GamePhase | null;
-  currentChallengeId: string | null;
+  /** 1-based position in the generated sequence; 0 before the round starts. */
+  slotIndex: number;
+  currentQuestionId: string | null;
   currentAuctionId: number | null;
+  blockNumber: number;
+  totalBlocks: number;
+  totalSlots: number;
+  /** True while the leaderboard blackout is in force. */
+  finalStretch: boolean;
   timer: TimerState;
-  /** Server clock at the moment the snapshot was produced (clock-skew correction). */
+  /** Server clock when the snapshot was produced (clock-skew correction). */
   serverNow: number;
   startedAt: number | null;
   completedAt: number | null;
 }
 
 /* ------------------------------------------------------------------ *
- * Leaderboard
+ * Leaderboard / podium
  * ------------------------------------------------------------------ */
 
 export interface LeaderboardRow {
@@ -318,33 +381,40 @@ export interface LeaderboardRow {
   name: string;
   capital: number;
   startingCapital: number;
-  delta: number; // capital - startingCapital
-  qualified: boolean;
+  delta: number;
+  /** 1, 2 or 3 for a podium place; null otherwise. */
+  podium: number | null;
   previousRank: number | null;
   connectionStatus: ConnectionStatus;
   status: TeamStatus;
+}
+
+export interface PodiumEntry {
+  place: number;
+  teamId: string;
+  name: string;
+  capital: number;
+  delta: number;
 }
 
 /* ------------------------------------------------------------------ *
  * Per-team live view (private to that team)
  * ------------------------------------------------------------------ */
 
-export type TeamChallengeState =
+export type TeamQuestionState =
   | 'idle'
   | 'locked'
   | 'available'
-  | 'joined'
   | 'in_progress'
   | 'submitted'
   | 'resolved'
-  | 'skipped'
-  | 'waiting';
+  | 'skipped';
 
 export interface TeamStats {
-  marketAttempted: number;
-  marketCorrect: number;
-  marketWrong: number;
-  marketSkipped: number;
+  attempted: number;
+  correct: number;
+  wrong: number;
+  skipped: number;
   premiumWins: number;
   premiumAttempts: number;
   premiumCorrect: number;
@@ -357,36 +427,49 @@ export interface TeamView {
   teamId: string;
   capital: number;
   maxBid: number;
+  /** Suppressed (0) for participants while the leaderboard is blacked out. */
   rank: number;
+  /**
+   * The podium place this team actually holds, or null. Not derivable from
+   * `rank`: with the field level every team shares rank 1 and nobody holds a
+   * place. Sent so the badge never contradicts the board.
+   */
+  podium: number | null;
   totalTeams: number;
-  qualified: boolean;
-  challengeState: TeamChallengeState;
-  /** Whether this team is authorised to open the current premium challenge. */
+  /** True when the client must not show global standings. */
+  leaderboardHidden: boolean;
+  questionState: TeamQuestionState;
+  /**
+   * Server-authoritative deadline for this team's own attempt, or null when it
+   * has not joined. Each team's clock starts when it joins, so this cannot be
+   * derived from the round's global timer - and guessing it client-side gave a
+   * reconnecting team a fresh full clock.
+   */
+  questionDeadline: number | null;
   premiumUnlocked: boolean;
   premiumRisk: number | null;
   lastResult: {
-    challengeId: string;
+    questionId: string;
     result: AttemptResult;
     delta: number;
     detail?: string;
     explanation?: string;
     at: number;
   } | null;
-  /** Reclaim offer addressed to this team. */
-  reclaimOffer: { challengeId: string; risk: number; deadline: number } | null;
+  reclaimOffer: { questionId: string; risk: number; deadline: number } | null;
   inAuction: boolean;
   myHighestBid: number | null;
   stats: TeamStats;
 }
 
 /* ------------------------------------------------------------------ *
- * Transactions / audit
+ * Transactions / audit / history
  * ------------------------------------------------------------------ */
 
 export type TransactionType =
   | 'initial'
-  | 'market_reward'
-  | 'market_penalty'
+  | 'question_reward'
+  | 'question_penalty'
   | 'premium_reward'
   | 'premium_penalty'
   | 'manual_adjustment';
@@ -394,11 +477,11 @@ export type TransactionType =
 export interface Transaction {
   id: number;
   teamId: string;
-  amount: number; // signed
+  amount: number;
   balanceAfter: number;
   type: TransactionType;
   reason: string;
-  challengeId: string | null;
+  questionId: string | null;
   timestamp: number;
 }
 
@@ -406,9 +489,48 @@ export interface AuditEntry {
   id: number;
   action: string;
   teamId: string | null;
-  challengeId: string | null;
+  questionId: string | null;
   timestamp: number;
   metadata: Record<string, unknown>;
+}
+
+export interface Attempt {
+  id: number;
+  teamId: string;
+  questionId: string;
+  slotIndex: number;
+  attemptNumber: number;
+  result: AttemptResult;
+  scoreChange: number;
+  riskAmount: number | null;
+  timestamp: number;
+  durationMs: number | null;
+  detail: string | null;
+}
+
+/** The complete per-team record the organizer can drill into (spec 12). */
+export interface TeamDossier {
+  team: Team;
+  joinCode: string | null;
+  stats: TeamStats;
+  rank: number;
+  attempts: (Attempt & {
+    title: string;
+    domain: Domain;
+    difficulty: Difficulty;
+    kind: QuestionKind;
+  })[];
+  bids: (Bid & { questionId: string; slotIndex: number; won: boolean })[];
+  transactions: Transaction[];
+  premiums: {
+    questionId: string;
+    slotIndex: number;
+    winningBid: number | null;
+    role: 'winner' | 'reclaim' | 'bidder';
+    outcome: PremiumOutcome;
+    result: AttemptResult | null;
+  }[];
+  audit: AuditEntry[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -426,26 +548,9 @@ export interface LiveEvent {
   id: string;
   teamId: string;
   teamName: string;
-  challengeId: string;
+  questionId: string;
   label: string;
   kind: LiveEventKind;
   since: number;
   needsAttention: boolean;
-}
-
-/* ------------------------------------------------------------------ *
- * Attempts
- * ------------------------------------------------------------------ */
-
-export interface Attempt {
-  id: number;
-  teamId: string;
-  challengeId: string;
-  attemptNumber: number;
-  result: AttemptResult;
-  scoreChange: number;
-  riskAmount: number | null;
-  timestamp: number;
-  durationMs: number | null;
-  detail: string | null;
 }

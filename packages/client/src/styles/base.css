@@ -130,6 +130,7 @@ a {
 }
 
 .eyebrow {
+  font-family: var(--font-ui);
   font-size: var(--fs-2xs);
   font-weight: 600;
   letter-spacing: var(--tracking-widest);
@@ -138,6 +139,7 @@ a {
 }
 
 .label {
+  font-family: var(--font-ui);
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: var(--tracking-wide);
@@ -267,6 +269,7 @@ a {
 /* --- buttons ------------------------------------------------------------- */
 
 .btn {
+  font-family: var(--font-ui);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -288,6 +291,20 @@ a {
     box-shadow var(--dur-fast) var(--ease-out);
   user-select: none;
   white-space: nowrap;
+}
+
+.btn,
+.option,
+.team-tile,
+.seq__item,
+.oheader__tab {
+  cursor: pointer;
+}
+
+.btn:disabled,
+.option:disabled,
+.team-tile:disabled {
+  cursor: not-allowed;
 }
 
 .btn:hover:not(:disabled) {
@@ -428,6 +445,7 @@ a {
 /* --- badges / chips ------------------------------------------------------- */
 
 .badge {
+  font-family: var(--font-ui);
   display: inline-flex;
   align-items: center;
   gap: 6px;

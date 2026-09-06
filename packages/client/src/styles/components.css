@@ -54,9 +54,43 @@
   will-change: transform;
 }
 
-.lb__row[data-qualified='true'] {
-  background: linear-gradient(90deg, rgba(34, 214, 127, 0.07) 0%, var(--bg-panel) 46%);
-  border-color: rgba(34, 214, 127, 0.18);
+/* Podium places. Never colour-only: the rank badge carries the marker too. */
+.lb__row[data-podium='1'] {
+  background: linear-gradient(90deg, rgba(255, 185, 48, 0.12) 0%, var(--bg-panel) 48%);
+  border-color: rgba(255, 185, 48, 0.36);
+}
+
+.lb__row[data-podium='2'] {
+  background: linear-gradient(90deg, rgba(203, 213, 225, 0.09) 0%, var(--bg-panel) 46%);
+  border-color: rgba(203, 213, 225, 0.24);
+}
+
+.lb__row[data-podium='3'] {
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.1) 0%, var(--bg-panel) 46%);
+  border-color: rgba(217, 119, 6, 0.26);
+}
+
+.lb__medal {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  color: #10131c;
+  background: var(--text-faint);
+}
+
+.lb__row[data-podium='1'] .lb__medal {
+  background: var(--premium);
+}
+.lb__row[data-podium='2'] .lb__medal {
+  background: #cbd5e1;
+}
+.lb__row[data-podium='3'] .lb__medal {
+  background: #d97706;
 }
 
 .lb__row[data-me='true'] {
@@ -188,30 +222,6 @@
   color: var(--text-strong);
 }
 
-.lb__line {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  margin: var(--sp-3) 0 var(--sp-4);
-  padding: 0 var(--sp-2);
-}
-
-.lb__line::before,
-.lb__line::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--gain), transparent);
-  opacity: 0.5;
-}
-
-.lb__line-text {
-  font-size: var(--fs-2xs);
-  font-weight: 700;
-  letter-spacing: var(--tracking-widest);
-  color: var(--gain);
-  white-space: nowrap;
-}
 
 /* --- compact (participant sidebar) --------------------------------- */
 
@@ -262,9 +272,15 @@
   border: 1px solid var(--line-soft);
 }
 
-.lb--projector .lb__row[data-qualified='true'] {
-  background: linear-gradient(90deg, rgba(34, 214, 127, 0.1) 0%, rgba(13, 17, 27, 0.82) 40%);
-  border-color: rgba(34, 214, 127, 0.26);
+.lb--projector .lb__row[data-podium='1'] {
+  background: linear-gradient(90deg, rgba(255, 185, 48, 0.16) 0%, rgba(11, 17, 32, 0.85) 42%);
+  border-color: rgba(255, 185, 48, 0.4);
+}
+
+.lb--projector .lb__medal {
+  width: 34px;
+  height: 34px;
+  font-size: var(--fs-base);
 }
 
 .lb--projector .lb__rank-num {
@@ -298,11 +314,6 @@
 
 .lb--projector .lb__move {
   font-size: var(--fs-base);
-}
-
-.lb--projector .lb__line-text {
-  font-size: var(--fs-base);
-  letter-spacing: var(--tracking-wider);
 }
 
 @media (max-width: 900px) {
@@ -530,6 +541,7 @@
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   background: radial-gradient(circle at 50% 50%, rgba(5, 7, 12, 0.72), rgba(5, 7, 12, 0.94));
 }
@@ -576,8 +588,7 @@
 }
 
 .flash[data-kind='correct'] .flash__amount,
-.flash[data-kind='auction_won'] .flash__amount,
-.flash[data-kind='qualified'] .flash__title {
+.flash[data-kind='auction_won'] .flash__amount {
   color: var(--gain);
 }
 
@@ -630,4 +641,62 @@
 .conn-banner[data-state='closed'] {
   background: var(--loss);
   color: #fff;
+}
+
+/* ==================================================================== *
+ * PROJECTOR BOARD FITTING
+ *
+ * The hall display has one screen and no scrollbar. Rows share the height
+ * they are given and the type steps down as the field grows, so every team
+ * the board claims to show is actually visible.
+ * ==================================================================== */
+
+.pj-leaderboard__board .lb {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 10px;
+}
+
+.pj-leaderboard__board .lb__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pj-leaderboard__board .lb--projector .lb__row {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-bottom: 0;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* Ten to twelve teams: trim the vertical padding before the type. */
+.pj-leaderboard__board[data-density='dense'] .lb--projector .lb__row {
+  padding: var(--sp-2) var(--sp-5);
+}
+
+.pj-leaderboard__board[data-density='dense'] .lb--projector .lb__team-name {
+  font-size: var(--fs-lg);
+}
+
+.pj-leaderboard__board[data-density='dense'] .lb--projector .lb__capital {
+  font-size: var(--fs-xl);
+}
+
+.pj-leaderboard__board[data-density='dense'] .lb--projector .lb__rank-num {
+  font-size: var(--fs-xl);
+  min-width: 60px;
+}
+
+.pj-leaderboard__board[data-density='dense'] .lb--projector .lb__row {
+  grid-template-columns: 80px 1fr 150px 220px;
+}
+
+/* Seven to ten teams: full type, tighter padding. */
+.pj-leaderboard__board[data-density='normal'] .lb--projector .lb__row {
+  padding: var(--sp-3) var(--sp-6);
 }

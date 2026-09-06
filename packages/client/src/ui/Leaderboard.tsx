@@ -12,8 +12,8 @@
  *    while the number changes.
  *  - Three updates in quick succession retarget the same springs - no
  *    duplicated rows, no flicker (the server also coalesces bursts).
- *  - The qualification divider is a real element inside the same layout group,
- *    so it animates when teams cross it.
+ *  - Podium places (1/2/3) get a medal treatment that is not colour-only: the
+ *    rank number itself carries the marker.
  */
 
 import { memo, useEffect, useRef, useState } from 'react';
@@ -25,7 +25,6 @@ import { money } from '../lib/format.js';
 
 interface Props {
   rows: LeaderboardRow[];
-  qualifiers: number;
   currencySymbol: string;
   /** Team ids whose capital just changed - drives the highlight pulse. */
   changed?: string[];
@@ -33,7 +32,8 @@ interface Props {
   /** Highlight the viewer's own row. */
   meId?: string | null;
   maxRows?: number;
-  showQualificationLine?: boolean;
+  /** Mark the podium places with a medal treatment. */
+  showPodium?: boolean;
 }
 
 interface RowMovement {
@@ -44,17 +44,15 @@ interface RowMovement {
 
 export function Leaderboard({
   rows,
-  qualifiers,
   currencySymbol,
   changed = [],
   variant = 'full',
   meId = null,
   maxRows,
-  showQualificationLine = true,
+  showPodium = true,
 }: Props) {
   const movements = useRankMovement(rows);
   const visible = maxRows ? rows.slice(0, maxRows) : rows;
-  const showLine = showQualificationLine && rows.length > qualifiers;
 
   return (
     <div className={`lb lb--${variant}`} role="table" aria-label="Live leaderboard">
@@ -75,43 +73,24 @@ export function Leaderboard({
 
       <div className="lb__body">
         <AnimatePresence initial={false}>
-          {visible.map((row, index) => {
-            const previousRow = visible[index - 1];
-            const dividerBefore =
-              showLine && previousRow !== undefined && previousRow.qualified && !row.qualified;
-
-            return (
-              <div key={row.teamId} className="lb__slot">
-                {dividerBefore ? (
-                  <motion.div
-                    layout
-                    className="lb__line"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={respectMotion(SPRING_ROW)}
-                    aria-hidden="true"
-                  >
-                    <span className="lb__line-text">
-                      QUALIFICATION LINE &nbsp;·&nbsp; TOP {qualifiers} ADVANCE
-                    </span>
-                  </motion.div>
-                ) : null}
-                <LeaderRow
-                  row={row}
-                  movement={movements.get(row.teamId)}
-                  highlighted={changed.includes(row.teamId)}
-                  isMe={row.teamId === meId}
-                  currencySymbol={currencySymbol}
-                  variant={variant}
-                />
-              </div>
-            );
-          })}
+          {visible.map((row) => (
+            <div key={row.teamId} className="lb__slot">
+              <LeaderRow
+                row={row}
+                movement={movements.get(row.teamId)}
+                highlighted={changed.includes(row.teamId)}
+                isMe={row.teamId === meId}
+                currencySymbol={currencySymbol}
+                variant={variant}
+                showPodium={showPodium}
+              />
+            </div>
+          ))}
         </AnimatePresence>
 
         {rows.length === 0 ? (
           <div className="empty-state">
-            <p className="muted">No teams yet.</p>
+            <p className="muted">No teams on the board yet.</p>
             <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
               Teams appear here as soon as the organizer registers them.
             </p>
@@ -129,6 +108,7 @@ const LeaderRow = memo(function LeaderRow({
   isMe,
   currencySymbol,
   variant,
+  showPodium,
 }: {
   row: LeaderboardRow;
   movement: RowMovement | undefined;
@@ -136,6 +116,7 @@ const LeaderRow = memo(function LeaderRow({
   isMe: boolean;
   currencySymbol: string;
   variant: 'compact' | 'full' | 'projector';
+  showPodium: boolean;
 }) {
   const gain = row.delta > 0;
   const loss = row.delta < 0;
@@ -146,7 +127,7 @@ const LeaderRow = memo(function LeaderRow({
       layoutId={`lb-${row.teamId}`}
       role="row"
       className="lb__row"
-      data-qualified={row.qualified}
+      data-podium={showPodium && row.podium ? row.podium : undefined}
       data-me={isMe}
       data-offline={row.connectionStatus === 'offline'}
       data-highlight={highlighted}
@@ -173,6 +154,11 @@ const LeaderRow = memo(function LeaderRow({
 
       <span className="lb__rank" role="cell">
         <span className="lb__rank-num num">{row.rank}</span>
+        {showPodium && row.podium ? (
+          <span className="lb__medal" aria-label={`Place ${row.podium}`}>
+            {row.podium}
+          </span>
+        ) : null}
         <AnimatePresence>
           {movement?.direction ? (
             <motion.span

@@ -111,9 +111,10 @@ export function closeLadder(ladder: readonly LadderEntry[]): LadderEntry[] {
   );
 }
 
-export function emptyPremiumState(challengeId: string): PremiumState {
+export function emptyPremiumState(questionId: string, slotIndex: number): PremiumState {
   return {
-    challengeId,
+    questionId,
+    slotIndex,
     stage: 'idle',
     auctionId: null,
     ladder: [],
@@ -125,6 +126,7 @@ export function emptyPremiumState(challengeId: string): PremiumState {
     offerDeadline: null,
     failedTeamId: null,
     outcome: null,
+    windowEndsAt: null,
   };
 }
 

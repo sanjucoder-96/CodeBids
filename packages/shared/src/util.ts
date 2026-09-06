@@ -26,30 +26,16 @@ export function formatTimeOfDay(ts: number): string {
     .join(':');
 }
 
-/** Fixed sequence for Round 2 (spec section 5). */
-export const ROUND_SEQUENCE: ('market' | 'premium' | 'final_premium')[] = [
-  'market', // 01
-  'market', // 02
-  'market', // 03
-  'premium', // 04
-  'market', // 05
-  'market', // 06
-  'premium', // 07
-  'market', // 08
-  'market', // 09
-  'premium', // 10
-  'market', // 11
-  'final_premium', // 12
-];
-
-export const TOTAL_CHALLENGES = ROUND_SEQUENCE.length;
-
-export function marketTypeFor(index: number): 'market' | 'premium' | 'final_premium' {
-  return ROUND_SEQUENCE[index - 1] ?? 'market';
+/**
+ * The round is GENERATED, not fixed: see `sequence.ts`. These helpers describe
+ * a slot once the server has drawn it.
+ */
+export function questionCode(index: number): string {
+  return `Q${String(index).padStart(2, '0')}`;
 }
 
-export function isPremiumType(t: string): boolean {
-  return t === 'premium' || t === 'final_premium';
+export function isPremium(kind: string): boolean {
+  return kind === 'premium';
 }
 
 /** Stable, dependency-free id generator for client-side correlation ids. */

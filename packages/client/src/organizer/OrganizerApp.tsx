@@ -168,12 +168,11 @@ function OrganizerShell({ token, onLogout }: { token: string; onLogout: () => vo
               <div className="panel panel--flush">
                 <div className="panel__head">
                   <span className="panel__title">Live leaderboard</span>
-                  <span className="badge">Top {config.qualifiers} qualify</span>
+                  <span className="badge">Top {config.podiumPlaces} win</span>
                 </div>
                 <div style={{ padding: 'var(--sp-3)', maxHeight: 520, overflowY: 'auto' }}>
                   <Leaderboard
                     rows={leaderboard}
-                    qualifiers={config.qualifiers}
                     currencySymbol={config.currencySymbol}
                     changed={changed}
                     variant="compact"

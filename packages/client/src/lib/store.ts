@@ -10,7 +10,6 @@ import { create } from 'zustand';
 import {
   DEFAULT_CONFIG,
   type AuctionView,
-  type ChallengePublic,
   type ClientRole,
   type Envelope,
   type GameConfig,
@@ -18,12 +17,15 @@ import {
   type LeaderboardRow,
   type LiveEvent,
   type PremiumState,
+  type PodiumEntry,
+  type PremiumPreview,
   type ProjectorMode,
+  type QuestionPublic,
+  type SequenceEntry,
   type Snapshot,
   type TeamPublic,
   type TeamView,
   type AuditEntry,
-  type ChallengeSummary,
 } from '@code-market/shared';
 import type { ConnectionState } from './socket.js';
 import { GameSocket } from './socket.js';
@@ -49,7 +51,9 @@ export interface Flash {
     | 'wrong'
     | 'timeout'
     | 'rank_up'
-    | 'qualified';
+    | 'strategy'
+    | 'final_stretch'
+    | 'podium';
   title: string;
   subtitle?: string;
   amount?: number;
@@ -69,12 +73,15 @@ interface StoreState {
   game: GameState | null;
   teams: TeamPublic[];
   leaderboard: LeaderboardRow[];
+  leaderboardHidden: boolean;
   auction: AuctionView | null;
   premium: PremiumState | null;
-  challenge: ChallengePublic | null;
+  premiumPreview: PremiumPreview | null;
+  question: QuestionPublic | null;
+  podium: PodiumEntry[] | null;
   me: TeamView | null;
   liveEvents: LiveEvent[];
-  challengeIndex: ChallengeSummary[];
+  sequence: SequenceEntry[];
   audit: AuditEntry[];
   projectorMode: ProjectorMode;
 
@@ -114,12 +121,15 @@ export const useStore = create<StoreState>((set, get) => ({
   game: null,
   teams: [],
   leaderboard: [],
+  leaderboardHidden: false,
   auction: null,
   premium: null,
-  challenge: null,
+  premiumPreview: null,
+  question: null,
+  podium: null,
   me: null,
   liveEvents: [],
-  challengeIndex: [],
+  sequence: [],
   audit: [],
   projectorMode: 'auto',
 
@@ -218,12 +228,15 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
         game: snapshot.game,
         teams: snapshot.teams,
         leaderboard: snapshot.leaderboard,
+        leaderboardHidden: snapshot.leaderboardHidden,
         auction: snapshot.auction,
         premium: snapshot.premium,
-        challenge: snapshot.challenge,
+        premiumPreview: snapshot.premiumPreview,
+        question: snapshot.question,
+        podium: snapshot.podium,
         me: snapshot.me,
         liveEvents: snapshot.liveEvents ?? [],
-        challengeIndex: snapshot.challengeIndex ?? [],
+        sequence: snapshot.sequence ?? [],
         ready: true,
         error: null,
       });
@@ -253,7 +266,11 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
     case 'GAME_COMPLETE':
       set({ game: d.game as GameState });
       if (frame.t === 'GAME_COMPLETE') {
-        set({ leaderboard: (d.leaderboard as LeaderboardRow[]) ?? state.leaderboard });
+        set({
+          leaderboard: (d.leaderboard as LeaderboardRow[]) ?? state.leaderboard,
+          podium: (d.podium as PodiumEntry[]) ?? null,
+          leaderboardHidden: false,
+        });
       }
       break;
 
@@ -262,10 +279,14 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
         game: null,
         auction: null,
         premium: null,
-        challenge: null,
         me: null,
         leaderboard: [],
         liveEvents: [],
+        sequence: [],
+        podium: null,
+        question: null,
+        premiumPreview: null,
+        leaderboardHidden: false,
       });
       get().socket?.resync();
       break;
@@ -316,22 +337,79 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
       if (before && me.rank < before.rank && before.rank > 0) {
         sound.play('rank_up');
       }
-      if (before && !before.qualified && me.qualified) {
-        get().showFlash({ kind: 'qualified', title: 'QUALIFICATION ZONE', subtitle: `RANK #${me.rank}` });
+      if (me.leaderboardHidden !== state.leaderboardHidden) {
+        set({ leaderboardHidden: me.leaderboardHidden });
       }
       break;
     }
 
-    case 'CHALLENGE_OPENED':
-      set({ challenge: d.challenge as ChallengePublic, game: d.game as GameState });
+    case 'QUESTION_INTRO':
+    case 'QUESTION_OPENED':
+      set({ question: d.question as QuestionPublic, game: d.game as GameState });
+      if (frame.t === 'QUESTION_INTRO') sound.play('intro');
       break;
 
-    case 'CHALLENGE_CLOSED':
-      set({ challenge: null });
+    case 'QUESTION_CLOSED':
+      set({ question: null });
       break;
 
-    case 'CHALLENGE_UNLOCKED': {
-      const payload = d as unknown as { teamId: string; risk: number; challengeId: string };
+    case 'PREMIUM_INTRO':
+      set({ premiumPreview: d.preview as PremiumPreview, game: d.game as GameState });
+      sound.play('premium_intro');
+      break;
+
+    case 'STRATEGY_STARTED':
+      set((s) => ({
+        game: s.game
+          ? {
+              ...s.game,
+              timer: {
+                endsAt: d.endsAt as number,
+                duration: d.duration as number,
+                label: 'STRATEGY',
+              },
+            }
+          : s.game,
+      }));
+      sound.play('strategy');
+      get().showFlash({ kind: 'strategy', title: 'STRATEGY PHASE', subtitle: 'PLAN YOUR NEXT MOVE' });
+      break;
+
+    case 'STRATEGY_ENDED':
+      set((s) => ({
+        game: s.game ? { ...s.game, timer: { endsAt: null, duration: null, label: null } } : s.game,
+      }));
+      break;
+
+    case 'FINAL_STRETCH_STARTED':
+      set({ leaderboardHidden: true, leaderboard: [] });
+      sound.play('final');
+      get().showFlash({
+        kind: 'final_stretch',
+        title: 'FINAL STRETCH',
+        subtitle: 'LEADERBOARD HIDDEN',
+      });
+      break;
+
+    case 'LEADERBOARD_HIDDEN':
+      set({ leaderboardHidden: true });
+      break;
+
+    case 'PODIUM_REVEALED':
+      set({
+        podium: d.podium as PodiumEntry[],
+        leaderboard: (d.leaderboard as LeaderboardRow[]) ?? state.leaderboard,
+        leaderboardHidden: false,
+      });
+      sound.play('podium');
+      break;
+
+    case 'SEQUENCE_GENERATED':
+      get().socket?.resync();
+      break;
+
+    case 'QUESTION_UNLOCKED': {
+      const payload = d as unknown as { teamId: string; risk: number; questionId: string };
       if (state.role === 'participant' && state.me?.teamId === payload.teamId) {
         sound.play('premium_unlock');
         get().showFlash({
@@ -344,7 +422,7 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
       break;
     }
 
-    case 'CHALLENGE_RESULT': {
+    case 'QUESTION_RESULT': {
       const result = d as unknown as {
         teamId: string;
         teamName: string;
@@ -472,6 +550,10 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
 
     case 'LIVE_EVENTS':
       set({ liveEvents: d.events as LiveEvent[] });
+      break;
+
+    case 'LEADERBOARD_REVEALED':
+      set({ leaderboard: d.rows as LeaderboardRow[], leaderboardHidden: false });
       break;
 
     case 'AUDIT_APPENDED':

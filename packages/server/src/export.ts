@@ -1,51 +1,54 @@
 /**
- * Result export (spec section 49) - CSV and JSON, generated locally.
+ * Result export (spec sections 12, 21). CSV and JSON, generated locally.
  */
 
-import { computeLeaderboard, isPremiumType } from '@code-market/shared';
+import { computeLeaderboard, computePodium } from '@code-market/shared';
 import type { FullExport, OrganizerExportRow } from '@code-market/shared';
 import type { GameEngine } from './core/engine.js';
+
+const PLACE_LABEL: Record<number, string> = { 1: '1st', 2: '2nd', 3: '3rd' };
 
 export function buildResultRows(engine: GameEngine): OrganizerExportRow[] {
   const repo = engine.getRepo();
   const config = engine.getConfig();
-  const teams = repo.listTeams();
-  const rows = computeLeaderboard(teams, { qualifiers: config.qualifiers });
+  const rows = computeLeaderboard(repo.listTeams(), { podiumPlaces: config.podiumPlaces });
 
   return rows.map((row) => {
     const stats = engine.teamStats(row.teamId);
     return {
       rank: row.rank,
+      place: row.podium ? (PLACE_LABEL[row.podium] ?? `${row.podium}th`) : '',
       teamId: row.teamId,
       team: row.name,
       startingCapital: row.startingCapital,
       finalCapital: row.capital,
-      normalAttempted: stats.marketAttempted,
-      normalCorrect: stats.marketCorrect,
+      attempted: stats.attempted,
+      correct: stats.correct,
+      wrong: stats.wrong,
       premiumWins: stats.premiumWins,
       premiumAttempts: stats.premiumAttempts,
       premiumCorrect: stats.premiumCorrect,
       premiumWrong: stats.premiumWrong,
       totalProfitLoss: row.capital - row.startingCapital,
-      qualification: row.qualified ? 'QUALIFIED' : 'NOT QUALIFIED',
     };
   });
 }
 
 const CSV_HEADERS = [
   'Rank',
+  'Place',
   'Team ID',
   'Team',
   'Starting Capital',
   'Final Capital',
-  'Normal Attempted',
-  'Normal Correct',
+  'Questions Attempted',
+  'Correct',
+  'Wrong',
   'Premium Wins',
   'Premium Attempts',
   'Premium Correct',
   'Premium Wrong',
   'Total Profit/Loss',
-  'Qualification Status',
 ];
 
 function csvCell(value: string | number): string {
@@ -60,18 +63,19 @@ export function exportCsv(engine: GameEngine): string {
     lines.push(
       [
         row.rank,
+        row.place,
         row.teamId,
         row.team,
         row.startingCapital,
         row.finalCapital,
-        row.normalAttempted,
-        row.normalCorrect,
+        row.attempted,
+        row.correct,
+        row.wrong,
         row.premiumWins,
         row.premiumAttempts,
         row.premiumCorrect,
         row.premiumWrong,
         row.totalProfitLoss,
-        row.qualification,
       ]
         .map(csvCell)
         .join(','),
@@ -83,18 +87,21 @@ export function exportCsv(engine: GameEngine): string {
 export function exportJson(engine: GameEngine): FullExport {
   const repo = engine.getRepo();
   const config = engine.getConfig();
+  const leaderboard = computeLeaderboard(repo.listTeams(), {
+    podiumPlaces: config.podiumPlaces,
+  });
   return {
-    event: { name: config.eventName, round: config.roundName, exportedAt: Date.now() },
+    event: {
+      name: config.eventName,
+      round: config.roundName,
+      roundNumber: config.roundNumber,
+      exportedAt: Date.now(),
+    },
     config,
     results: buildResultRows(engine),
+    podium: computePodium(leaderboard, config.podiumPlaces),
+    sequence: engine.sequenceEntries(),
     teams: repo.listTeams(),
-    challenges: repo.listChallenges().map((c) => ({
-      id: c.id,
-      index: c.index,
-      title: c.title,
-      marketType: c.marketType,
-      category: c.category,
-    })),
     auctions: repo.listAuctions(),
     bids: repo.listAllBids(),
     attempts: repo.listAttempts(),
@@ -103,37 +110,35 @@ export function exportJson(engine: GameEngine): FullExport {
   };
 }
 
-/** A human-readable audit trail for dispute resolution (spec section 35). */
+/** A human-readable audit trail for dispute resolution. */
 export function exportAuditText(engine: GameEngine): string {
   const entries = engine.listAudit(100_000);
   const lines = entries.map((entry) => {
     const time = new Date(entry.timestamp).toLocaleTimeString('en-GB', { hour12: false });
     const who = entry.teamId ?? '--';
-    const where = entry.challengeId ? ` ${entry.challengeId}` : '';
+    const where = entry.questionId ? ` ${entry.questionId}` : '';
     const meta = Object.keys(entry.metadata).length > 0 ? ` ${JSON.stringify(entry.metadata)}` : '';
     return `${time}  ${who.padEnd(6)}  ${entry.action}${where}${meta}`;
   });
   return `${lines.join('\n')}\n`;
 }
 
-/** Per-challenge breakdown, useful for a post-event debrief. */
-export function exportChallengeStats(engine: GameEngine): {
-  challengeId: string;
-  index: number;
-  title: string;
-  marketType: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-}[] {
+/** Per-slot breakdown of the generated round. */
+export function exportSequenceStats(engine: GameEngine) {
   const repo = engine.getRepo();
-  return repo.listChallenges().map((challenge) => {
-    const counts = repo.countAttemptsForChallenge(challenge.id);
+  return engine.sequenceEntries().map((entry) => {
+    const counts = repo.countAttemptsForSlot(entry.index);
     return {
-      challengeId: challenge.id,
-      index: challenge.index,
-      title: challenge.title,
-      marketType: challenge.marketType,
+      slotIndex: entry.index,
+      blockNumber: entry.blockNumber,
+      kind: entry.kind,
+      questionId: entry.questionId,
+      title: entry.title,
+      domain: entry.domain,
+      difficulty: entry.difficulty,
+      timeLimit: entry.timeLimit,
+      state: entry.state,
+      inFinalStretch: entry.inFinalStretch,
       attempts: counts.attempts,
       correct: counts.correct,
       accuracy: counts.attempts > 0 ? Math.round((counts.correct / counts.attempts) * 100) : 0,
@@ -143,16 +148,19 @@ export function exportChallengeStats(engine: GameEngine): {
 
 export function premiumSummary(engine: GameEngine) {
   const repo = engine.getRepo();
-  return repo
-    .listChallenges()
-    .filter((c) => isPremiumType(c.marketType))
-    .map((challenge) => {
-      const auction = repo.getAuctionForChallenge(challenge.id);
-      const premium = repo.getPremiumState(challenge.id);
+  return engine
+    .sequenceEntries()
+    .filter((entry) => entry.kind === 'premium')
+    .map((entry) => {
+      const auction = repo.getAuctionForSlot(entry.index);
+      const premium = repo.getPremiumState(entry.questionId);
       return {
-        challengeId: challenge.id,
-        index: challenge.index,
-        title: challenge.title,
+        questionId: entry.questionId,
+        slotIndex: entry.index,
+        blockNumber: entry.blockNumber,
+        title: entry.title,
+        domain: entry.domain,
+        difficulty: entry.difficulty,
         winner: auction?.winnerTeamId ?? null,
         winningBid: auction?.winningAmount ?? null,
         outcome: premium?.outcome ?? null,

@@ -7,7 +7,7 @@
  */
 
 import type { GameConfig, RewardRule } from './config.js';
-import type { Challenge, Difficulty, Team } from './types.js';
+import type { Difficulty, Question, Team } from './types.js';
 
 /* ------------------------------------------------------------------ *
  * Protected reserve / bidding power
@@ -135,23 +135,23 @@ function applyRule(rule: RewardRule, difficulty: Difficulty, capital: number): n
   return Math.round(clamped);
 }
 
-export function marketReward(
+export function questionReward(
   config: GameConfig,
-  challenge: Pick<Challenge, 'difficulty' | 'rewardOverride'>,
+  question: Pick<Question, 'difficulty' | 'rewardOverride'>,
   capital: number,
 ): number {
-  if (typeof challenge.rewardOverride === 'number') return Math.round(challenge.rewardOverride);
-  return applyRule(config.marketReward, challenge.difficulty, capital);
+  if (typeof question.rewardOverride === 'number') return Math.round(question.rewardOverride);
+  return applyRule(config.questionReward, question.difficulty, capital);
 }
 
-export function marketPenalty(
+export function questionPenalty(
   config: GameConfig,
-  challenge: Pick<Challenge, 'difficulty' | 'penaltyOverride'>,
+  question: Pick<Question, 'difficulty' | 'penaltyOverride'>,
   capital: number,
 ): number {
-  if (!config.marketPenaltyEnabled) return 0;
-  if (typeof challenge.penaltyOverride === 'number') return Math.round(challenge.penaltyOverride);
-  return applyRule(config.marketPenalty, challenge.difficulty, capital);
+  if (!config.penaltyEnabled) return 0;
+  if (typeof question.penaltyOverride === 'number') return Math.round(question.penaltyOverride);
+  return applyRule(config.questionPenalty, question.difficulty, capital);
 }
 
 /**
@@ -184,25 +184,25 @@ function settle(config: GameConfig, capital: number, rawDelta: number): CapitalD
   return { delta, rawDelta, newCapital, clamped: newCapital !== target };
 }
 
-export type MarketResolution = 'correct' | 'wrong' | 'timeout' | 'skipped';
+export type QuestionResolution = 'correct' | 'wrong' | 'timeout' | 'skipped';
 
-export function resolveMarket(
+export function resolveQuestion(
   config: GameConfig,
-  challenge: Pick<Challenge, 'difficulty' | 'rewardOverride' | 'penaltyOverride' | 'timeLimit'>,
+  question: Pick<Question, 'difficulty' | 'rewardOverride' | 'penaltyOverride' | 'timeLimit'>,
   capital: number,
-  resolution: MarketResolution,
+  resolution: QuestionResolution,
   elapsedMs = 0,
 ): CapitalDelta {
   if (resolution === 'skipped') return settle(config, capital, 0);
   if (resolution === 'correct') {
-    const reward = marketReward(config, challenge, capital);
-    const bonus = speedBonus(config, challenge.timeLimit, elapsedMs);
+    const reward = questionReward(config, question, capital);
+    const bonus = speedBonus(config, question.timeLimit, elapsedMs);
     return settle(config, capital, reward + bonus);
   }
-  if (resolution === 'timeout' && !config.marketTimeoutPenalised) {
+  if (resolution === 'timeout' && !config.timeoutPenalised) {
     return settle(config, capital, 0);
   }
-  return settle(config, capital, -marketPenalty(config, challenge, capital));
+  return settle(config, capital, -questionPenalty(config, question, capital));
 }
 
 /* ------------------------------------------------------------------ *

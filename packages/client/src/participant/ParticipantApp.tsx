@@ -1,37 +1,42 @@
 /**
- * The participant client (spec sections 21, 22, 23).
+ * The participant client (Round 3).
  *
  * Screen selection is derived entirely from authoritative server state, so a
- * reconnect always lands the team on the right screen. The team can always see:
- * capital, rank, the current challenge, its status, the clock, whether they won
- * a premium, their bid, their risk, the result and the next opportunity.
+ * reconnect always lands the team on the right screen. A team can always see:
+ * capital, its own position, the current question, its status, the clock,
+ * premium/auction state, its result and what happens next.
  */
 
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { isPremiumType } from '@code-market/shared';
 import { useStore } from '../lib/store.js';
 import { Login } from './Login.js';
 import { TeamHeader } from './TeamHeader.js';
-import { MarketScreen } from './MarketScreen.js';
+import { QuestionIntroScreen } from './QuestionIntroScreen.js';
+import { QuestionScreen } from './QuestionScreen.js';
 import { ChallengeScreen } from './ChallengeScreen.js';
+import { PremiumIntroScreen } from './PremiumIntroScreen.js';
 import { AuctionScreen } from './AuctionScreen.js';
 import { PremiumScreen } from './PremiumScreen.js';
 import { ReclaimScreen } from './ReclaimScreen.js';
 import { ResultScreen } from './ResultScreen.js';
+import { StrategyScreen } from './StrategyScreen.js';
 import { WaitingScreen } from './WaitingScreen.js';
 import { FinalScreen } from './FinalScreen.js';
 
 const TOKEN_KEY = 'cm.participant.token';
 
-type Screen =
+export type Screen =
   | 'waiting'
-  | 'market'
-  | 'challenge'
+  | 'question_intro'
+  | 'question'
+  | 'solving'
+  | 'premium_intro'
   | 'auction'
   | 'premium'
   | 'reclaim'
   | 'result'
+  | 'strategy'
   | 'final';
 
 export function ParticipantApp() {
@@ -117,11 +122,9 @@ function ParticipantShell({ onLogout }: { onLogout: () => void }) {
       <main className="participant__main container">
         {/*
           Screen swaps are ENTER-ONLY and keyed by screen name. An exit-based
-          cross-fade (AnimatePresence mode="wait") makes the swap depend on an
-          exit animation completing; if that ever stalls, a team is left staring
-          at the previous screen while the round moves on. During a live event
-          that is unacceptable, so the new screen mounts immediately and simply
-          animates in.
+          cross-fade makes the swap depend on an exit animation completing; if
+          that ever stalls, a team is left staring at the previous screen while
+          the round moves on.
         */}
         <motion.div
           key={screen}
@@ -130,12 +133,15 @@ function ParticipantShell({ onLogout }: { onLogout: () => void }) {
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
           className="participant__screen"
         >
-          {screen === 'market' ? <MarketScreen /> : null}
-          {screen === 'challenge' ? <ChallengeScreen /> : null}
+          {screen === 'question_intro' ? <QuestionIntroScreen /> : null}
+          {screen === 'question' ? <QuestionScreen /> : null}
+          {screen === 'solving' ? <ChallengeScreen /> : null}
+          {screen === 'premium_intro' ? <PremiumIntroScreen /> : null}
           {screen === 'auction' ? <AuctionScreen /> : null}
           {screen === 'premium' ? <PremiumScreen /> : null}
           {screen === 'reclaim' ? <ReclaimScreen /> : null}
           {screen === 'result' ? <ResultScreen /> : null}
+          {screen === 'strategy' ? <StrategyScreen /> : null}
           {screen === 'final' ? <FinalScreen /> : null}
           {screen === 'waiting' ? <WaitingScreen /> : null}
         </motion.div>
@@ -148,35 +154,54 @@ function ParticipantShell({ onLogout }: { onLogout: () => void }) {
 export function useScreen(): Screen {
   const game = useStore((s) => s.game);
   const me = useStore((s) => s.me);
-  const challenge = useStore((s) => s.challenge);
+  const question = useStore((s) => s.question);
   const premium = useStore((s) => s.premium);
 
   if (!game) return 'waiting';
-  if (game.phase === 'complete') return 'final';
 
+  // A reclaim offer addressed to this team always wins - it is time-critical.
   if (me?.reclaimOffer) return 'reclaim';
 
-  if (game.phase === 'auction' || game.phase === 'final') {
-    if (game.phase === 'final' && !game.currentAuctionId) return 'waiting';
-    // The winner moves to the premium screen the moment the hammer falls.
-    if (premium?.activeTeamId === me?.teamId && premium?.stage !== 'auction') return 'premium';
-    return 'auction';
+  switch (game.phase) {
+    case 'final_results':
+    case 'completed':
+      return 'final';
+
+    case 'strategy_phase':
+      return 'strategy';
+
+    case 'question_intro':
+      return question ? 'question_intro' : 'waiting';
+
+    case 'question_active':
+      if (me?.questionState === 'in_progress') return 'solving';
+      if (me?.questionState === 'submitted' || me?.questionState === 'resolved') return 'result';
+      if (me?.questionState === 'skipped') return 'result';
+      return question ? 'question' : 'waiting';
+
+    case 'question_result':
+    case 'premium_result':
+      return 'result';
+
+    case 'premium_intro':
+      return 'premium_intro';
+
+    case 'auction_active':
+      return 'auction';
+
+    case 'premium_authorized':
+      return premium?.activeTeamId === me?.teamId ? 'premium' : 'auction';
+
+    case 'premium_solving':
+      if (premium?.activeTeamId !== me?.teamId) return 'waiting';
+      return me?.questionState === 'in_progress' ? 'solving' : 'premium';
+
+    case 'reclaim':
+      return 'waiting';
+
+    case 'paused':
+    case 'idle':
+    default:
+      return 'waiting';
   }
-
-  if (game.phase === 'premium_attempt' || game.phase === 'premium_reclaim') {
-    if (premium?.activeTeamId === me?.teamId) {
-      return me?.challengeState === 'in_progress' ? 'challenge' : 'premium';
-    }
-    return 'waiting';
-  }
-
-  if (game.phase === 'market' && challenge && !isPremiumType(challenge.marketType)) {
-    if (me?.challengeState === 'in_progress') return 'challenge';
-    if (me?.challengeState === 'resolved' || me?.challengeState === 'submitted') return 'result';
-    return 'market';
-  }
-
-  if (game.phase === 'result') return 'result';
-
-  return 'waiting';
 }

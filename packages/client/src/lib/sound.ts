@@ -20,6 +20,10 @@ export type Cue =
   | 'rank_up'
   | 'fail'
   | 'final'
+  | 'intro'
+  | 'premium_intro'
+  | 'strategy'
+  | 'podium'
   | 'tick';
 
 interface Note {
@@ -83,6 +87,27 @@ const CUES: Record<Cue, Note[]> = {
     { freq: 784, start: 0.45, duration: 0.45, type: 'sine', gain: 0.16 },
   ],
   tick: [{ freq: 1200, start: 0, duration: 0.03, type: 'square', gain: 0.06 }],
+
+  /* --- Round 3 cues ------------------------------------------------- */
+  intro: [
+    { freq: 494, start: 0, duration: 0.08, type: 'triangle', gain: 0.1 },
+    { freq: 659, start: 0.07, duration: 0.14, type: 'triangle', gain: 0.11 },
+  ],
+  premium_intro: [
+    { freq: 330, start: 0, duration: 0.12, type: 'triangle', gain: 0.12 },
+    { freq: 494, start: 0.11, duration: 0.12, type: 'triangle', gain: 0.13 },
+    { freq: 659, start: 0.22, duration: 0.26, type: 'sine', gain: 0.14 },
+  ],
+  strategy: [
+    { freq: 392, start: 0, duration: 0.1, type: 'sine', gain: 0.1 },
+    { freq: 523, start: 0.1, duration: 0.18, type: 'sine', gain: 0.1 },
+  ],
+  podium: [
+    { freq: 523, start: 0, duration: 0.14, type: 'triangle', gain: 0.14 },
+    { freq: 659, start: 0.13, duration: 0.14, type: 'triangle', gain: 0.14 },
+    { freq: 784, start: 0.26, duration: 0.14, type: 'triangle', gain: 0.15 },
+    { freq: 1047, start: 0.39, duration: 0.5, type: 'sine', gain: 0.16 },
+  ],
 };
 
 class SoundSystem {

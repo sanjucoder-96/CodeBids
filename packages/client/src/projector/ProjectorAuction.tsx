@@ -9,7 +9,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { RollingNumber } from '../ui/AnimatedNumber.js';
-import { money, categoryLabel } from '../lib/format.js';
+import { money, domainLabel, difficultyLabel } from '../lib/format.js';
+import { DiamondIcon, FlameIcon, GavelIcon } from '../ui/Icons.js';
 
 export function ProjectorAuction() {
   const auction = useStore((s) => s.auction);
@@ -18,10 +19,10 @@ export function ProjectorAuction() {
 
   if (!auction) return null;
 
-  const isFinal = auction.challenge.marketType === 'final_premium';
+  const isFinal = auction.preview.isFinalPremium;
   const status = auction.auction.status;
   const closed = status === 'closed';
-  const number = String(auction.challenge.index).padStart(2, '0');
+  const number = auction.preview.premiumNumber;
 
   if (closed && auction.auction.winnerTeamId) {
     return <SoldCard
@@ -42,9 +43,15 @@ export function ProjectorAuction() {
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          {isFinal ? '💎 FINAL PREMIUM' : '🔥 PREMIUM'} #{number}
+          <span aria-hidden="true" style={{ verticalAlign: '-6px', marginRight: 10 }}>
+            {isFinal ? <DiamondIcon size={36} /> : <FlameIcon size={36} />}
+          </span>
+          {isFinal ? 'FINAL PREMIUM' : `PREMIUM #${number}`}
         </motion.div>
-        <div className="pj-auction__category">{categoryLabel(auction.challenge.category)}</div>
+        <div className="pj-auction__category">
+          {domainLabel(auction.preview.domain)} · {difficultyLabel(auction.preview.difficulty)} ·{' '}
+          {auction.preview.timeLimit}s
+        </div>
       </header>
 
       <div className="pj-auction__bid">
@@ -130,8 +137,9 @@ function SoldCard({
         initial={{ rotate: -28, opacity: 0 }}
         animate={{ rotate: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 420, damping: 14 }}
+        aria-hidden="true"
       >
-        🔨
+        <GavelIcon size={64} />
       </motion.div>
       <div className="pj-sold__word">SOLD</div>
       <motion.div

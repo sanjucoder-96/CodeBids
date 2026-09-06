@@ -5,14 +5,16 @@
 
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
-import { money, challengeLabel } from '../lib/format.js';
+import { money, blockLabel } from '../lib/format.js';
+import { CheckIcon } from '../ui/Icons.js';
 import { dramaticReveal } from '../lib/motion.js';
 
 export function PremiumScreen() {
   const premium = useStore((s) => s.premium);
-  const challenge = useStore((s) => s.challenge);
+  const question = useStore((s) => s.question);
   const me = useStore((s) => s.me);
-  const symbol = useStore((s) => s.config.currencySymbol);
+  const config = useStore((s) => s.config);
+  const symbol = config.currencySymbol;
 
   if (!premium || !me) return null;
 
@@ -39,9 +41,16 @@ export function PremiumScreen() {
         </motion.div>
 
         <h2 className="premium-hero__title">
-          {challenge ? challengeLabel(challenge.index, challenge.marketType) : 'PREMIUM'}
+          {question
+            ? blockLabel(question.blockNumber, question.positionInBlock, config.questionsPerBlock)
+            : 'PREMIUM CHALLENGE'}
         </h2>
-        <p className="premium-hero__subtitle">✓ UNLOCKED FOR YOUR TEAM</p>
+        <p className="premium-hero__subtitle">
+          <span aria-hidden="true">
+            <CheckIcon size={14} />
+          </span>
+          UNLOCKED FOR YOUR TEAM
+        </p>
 
         <motion.div
           className="premium-hero__risk"

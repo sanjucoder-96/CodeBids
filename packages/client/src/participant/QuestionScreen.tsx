@@ -1,9 +1,8 @@
 /**
- * The market screen: enter the access key, then make the risk decision
- * (spec sections 9, 10, 22).
+ * The decision screen: enter the access key, then commit.
  *
  * The question body is deliberately NOT shown until the team commits - what
- * they see first is the category, the difficulty, the reward and the penalty.
+ * they see first is the domain, the difficulty, the reward and the penalty.
  * That is the strategic choice the round is built on.
  */
 
@@ -11,13 +10,13 @@ import { useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { money } from '../lib/format.js';
-import { categoryLabel, challengeLabel, typeLabel } from '../lib/format.js';
+import { domainLabel, blockLabel, difficultyLabel, typeLabel } from '../lib/format.js';
 import { scaleIn } from '../lib/motion.js';
 import { sound } from '../lib/sound.js';
 import { LockIcon, UnlockIcon } from '../ui/Icons.js';
 
-export function MarketScreen() {
-  const challenge = useStore((s) => s.challenge);
+export function QuestionScreen() {
+  const question = useStore((s) => s.question);
   const me = useStore((s) => s.me);
   const config = useStore((s) => s.config);
   const call = useStore((s) => s.call);
@@ -28,19 +27,19 @@ export function MarketScreen() {
   const [error, setError] = useState<string | null>(null);
   const [justUnlocked, setJustUnlocked] = useState(false);
 
-  if (!challenge || !me) return null;
+  if (!question || !me) return null;
 
-  const unlocked = me.challengeState === 'available' || me.challengeState === 'joined';
-  const skipped = me.challengeState === 'skipped';
+  const unlocked = me.questionState === 'available';
+  const skipped = me.questionState === 'skipped';
   const symbol = config.currencySymbol;
 
   async function unlock(event: FormEvent) {
     event.preventDefault();
-    if (busy || !challenge) return;
+    if (busy || !question) return;
     setBusy(true);
     setError(null);
     try {
-      await call('UNLOCK_CHALLENGE', { challengeId: challenge.id, accessKey: key.trim() });
+      await call('UNLOCK_QUESTION', { questionId: question.id, accessKey: key.trim() });
       sound.play('premium_unlock');
       setJustUnlocked(true);
       setTimeout(() => setJustUnlocked(false), 900);
@@ -53,10 +52,10 @@ export function MarketScreen() {
   }
 
   async function join() {
-    if (!challenge) return;
+    if (!question) return;
     setBusy(true);
     try {
-      await call('JOIN_CHALLENGE', { challengeId: challenge.id });
+      await call('JOIN_QUESTION', { questionId: question.id });
     } catch (err) {
       pushToast({ kind: 'warn', title: err instanceof Error ? err.message : 'Could not join' });
     } finally {
@@ -65,10 +64,10 @@ export function MarketScreen() {
   }
 
   async function skip() {
-    if (!challenge) return;
+    if (!question) return;
     setBusy(true);
     try {
-      await call('SKIP_CHALLENGE', { challengeId: challenge.id });
+      await call('SKIP_QUESTION', { questionId: question.id });
       pushToast({ kind: 'info', title: 'Sat this one out', detail: 'No capital risked.' });
     } catch (err) {
       pushToast({ kind: 'warn', title: err instanceof Error ? err.message : 'Could not skip' });
@@ -81,10 +80,10 @@ export function MarketScreen() {
     return (
       <div className="screen screen--center">
         <motion.div className="panel panel--pad" variants={scaleIn} initial="hidden" animate="show">
-          <div className="eyebrow">{challengeLabel(challenge.index, challenge.marketType)}</div>
+          <div className="eyebrow">{blockLabel(question.blockNumber, question.positionInBlock, config.questionsPerBlock)}</div>
           <h2 className="screen__title">You sat this one out</h2>
           <p className="muted">
-            No capital was risked. The next challenge will open here automatically.
+            No capital was risked. The next question opens here automatically.
           </p>
         </motion.div>
       </div>
@@ -105,17 +104,17 @@ export function MarketScreen() {
         control behind an animation completing.
       */}
       <motion.div
-        className={`market-card panel ${unlocked ? 'market-card--open' : ''}`}
+        className={`q-card panel ${unlocked ? 'q-card--open' : ''}`}
         animate={justUnlocked ? { scale: [1, 1.02, 1] } : { scale: 1 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       >
-        <div className="market-card__head">
+        <div className="q-card__head">
           <div>
-            <div className="eyebrow">{challengeLabel(challenge.index, challenge.marketType)}</div>
-            <h2 className="market-card__title">{challenge.title}</h2>
+            <div className="eyebrow">{blockLabel(question.blockNumber, question.positionInBlock, config.questionsPerBlock)}</div>
+            <h2 className="q-card__title">{question.title}</h2>
           </div>
           <motion.div
-            className="market-card__lock"
+            className="q-card__lock"
             data-unlocked={unlocked}
             animate={unlocked ? { rotate: [0, -14, 0], scale: [1, 1.12, 1] } : {}}
             transition={{ duration: 0.5 }}
@@ -125,24 +124,24 @@ export function MarketScreen() {
           </motion.div>
         </div>
 
-        <div className="market-card__meta">
-          <span className="badge badge--accent">{categoryLabel(challenge.category)}</span>
-          <span className="badge">{typeLabel(challenge.type)}</span>
-          <span className="badge" data-difficulty={challenge.difficulty}>
-            {challenge.difficulty.toUpperCase()}
+        <div className="q-card__meta">
+          <span className="badge badge--accent">{domainLabel(question.domain)}</span>
+          <span className="badge">{typeLabel(question.type)}</span>
+          <span className="badge" data-difficulty={question.difficulty}>
+            {difficultyLabel(question.difficulty)}
           </span>
-          <span className="badge">{challenge.timeLimit}s</span>
+          <span className="badge">{question.timeLimit}s</span>
         </div>
 
-        <div className="market-card__stakes">
+        <div className="q-card__stakes">
           <div className="stake stake--gain">
             <span className="stake__label">If correct</span>
-            <span className="stake__value num">+{money(challenge.reward ?? 0, symbol)}</span>
+            <span className="stake__value num">+{money(question.reward ?? 0, symbol)}</span>
           </div>
           <div className="stake stake--loss">
             <span className="stake__label">If wrong or timed out</span>
             <span className="stake__value num">
-              {(challenge.penalty ?? 0) > 0 ? `-${money(challenge.penalty ?? 0, symbol)}` : 'No penalty'}
+              {(question.penalty ?? 0) > 0 ? `-${money(question.penalty ?? 0, symbol)}` : 'No penalty'}
             </span>
           </div>
           <div className="stake">
@@ -155,21 +154,21 @@ export function MarketScreen() {
           <motion.form
             key="key-form"
             onSubmit={unlock}
-            className="market-card__unlock"
+            className="q-card__unlock"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
-              <label className="label" htmlFor="challenge-key">
-                Enter the challenge key
+              <label className="label" htmlFor="question-key">
+                Enter the question key
               </label>
-              <div className="market-card__key-row">
+              <div className="q-card__key-row">
                 <input
-                  id="challenge-key"
+                  id="question-key"
                   className="input input--key"
                   value={key}
                   onChange={(event) => setKey(event.target.value.toUpperCase())}
-                  placeholder="MKT-0000"
+                  placeholder="Q-0000"
                   autoComplete="off"
                   spellCheck={false}
                   maxLength={16}
@@ -185,7 +184,7 @@ export function MarketScreen() {
               </div>
               {error ? (
                 <motion.p
-                  className="market-card__error"
+                  className="q-card__error"
                   initial={{ x: 0 }}
                   animate={{ x: [0, -7, 7, -4, 0] }}
                   transition={{ duration: 0.32 }}
@@ -195,34 +194,34 @@ export function MarketScreen() {
                 </motion.p>
               ) : (
                 <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-                  The key is announced by the organizer when the challenge opens.
+                  The key is announced by the organizer when the question opens.
                 </p>
               )}
             </motion.form>
         ) : (
           <motion.div
             key="decision"
-            className="market-card__decision"
+            className="q-card__decision"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
-              <div className="market-card__decision-copy">
-                <h3 className="market-card__decision-title">Take the trade?</h3>
+              <div className="q-card__decision-copy">
+                <h3 className="q-card__decision-title">Commit to this question?</h3>
                 <p className="muted">
-                  {config.marketOptIn
+                  {config.questionOptIn
                     ? 'Joining starts your clock and reveals the question. Sitting out costs nothing.'
-                    : 'Start the challenge when you are ready.'}
+                    : 'Start the question when you are ready.'}
                 </p>
               </div>
-              <div className="market-card__actions">
-                {config.marketOptIn ? (
+              <div className="q-card__actions">
+                {config.questionOptIn ? (
                   <button className="btn btn--ghost btn--lg" onClick={skip} disabled={busy}>
                     Sit out
                   </button>
                 ) : null}
                 <button className="btn btn--gain btn--xl" onClick={join} disabled={busy} autoFocus>
-                  Enter the trade
+                  Take it on
                 </button>
               </div>
           </motion.div>

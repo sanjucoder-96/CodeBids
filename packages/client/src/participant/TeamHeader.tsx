@@ -50,17 +50,19 @@ export function TeamHeader({ onLogout }: { onLogout: () => void }) {
             />
           </Stat>
 
-          <Stat label="Rank">
+          <Stat label={me.leaderboardHidden ? 'Position' : 'Rank'}>
             <motion.span
-              key={me.rank}
+              key={me.leaderboardHidden ? 'hidden' : me.rank}
               className="num"
               initial={{ y: 10, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 420, damping: 30 }}
             >
-              #{me.rank || '—'}
+              {me.leaderboardHidden ? '—' : `#${me.rank || '—'}`}
             </motion.span>
-            <span className="pheader__stat-sub dim">of {me.totalTeams}</span>
+            <span className="pheader__stat-sub dim">
+              {me.leaderboardHidden ? 'sealed' : `of ${me.totalTeams}`}
+            </span>
           </Stat>
 
           <Stat label="Max bid">
@@ -73,12 +75,16 @@ export function TeamHeader({ onLogout }: { onLogout: () => void }) {
             <span className="pheader__stat-sub dim">reserve {money(config.protectedReserve, symbol)}</span>
           </Stat>
 
-          {me.qualified ? (
-            <span className="badge badge--gain badge--dot" title="Currently inside the qualification zone">
-              QUALIFYING
+          {me.leaderboardHidden ? (
+            <span className="badge badge--dot" title="Standings are sealed for the finale">
+              STANDINGS SEALED
+            </span>
+          ) : me.podium !== null ? (
+            <span className="badge badge--premium badge--dot" title="Currently on the podium">
+              PODIUM
             </span>
           ) : (
-            <span className="badge badge--dot" title="Outside the qualification zone">
+            <span className="badge badge--dot" title="Chasing the podium">
               CHASING
             </span>
           )}

@@ -8,40 +8,40 @@
 
 import { useCallback } from 'react';
 import { motion } from 'motion/react';
-import type { ChallengePublic, SubmissionValue } from '@code-market/shared';
+import type { QuestionPublic, SubmissionValue } from '@code-market/shared';
 
 interface Props {
-  challenge: ChallengePublic;
+  question: QuestionPublic;
   value: SubmissionValue | null;
   onChange: (value: SubmissionValue) => void;
   disabled?: boolean;
 }
 
-export function AnswerInput({ challenge, value, onChange, disabled }: Props) {
-  switch (challenge.type) {
+export function AnswerInput({ question, value, onChange, disabled }: Props) {
+  switch (question.type) {
     case 'mcq':
-      return <ChoiceInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} multi={false} />;
+      return <ChoiceInput question={question} value={value} onChange={onChange} disabled={disabled} multi={false} />;
     case 'multi':
-      return <ChoiceInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} multi />;
+      return <ChoiceInput question={question} value={value} onChange={onChange} disabled={disabled} multi />;
     case 'true_false':
       return <BooleanInput value={value} onChange={onChange} disabled={disabled} />;
     case 'numeric':
-      return <NumericInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} />;
+      return <NumericInput question={question} value={value} onChange={onChange} disabled={disabled} />;
     case 'ordering':
-      return <OrderingInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} />;
+      return <OrderingInput question={question} value={value} onChange={onChange} disabled={disabled} />;
     case 'matching':
-      return <MatchingInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} />;
+      return <MatchingInput question={question} value={value} onChange={onChange} disabled={disabled} />;
     case 'code':
-      return <CodeInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} />;
+      return <CodeInput question={question} value={value} onChange={onChange} disabled={disabled} />;
     default:
-      return <TextInput challenge={challenge} value={value} onChange={onChange} disabled={disabled} />;
+      return <TextInput question={question} value={value} onChange={onChange} disabled={disabled} />;
   }
 }
 
 /* ------------------------------------------------------------------ */
 
 function ChoiceInput({
-  challenge,
+  question,
   value,
   onChange,
   disabled,
@@ -65,7 +65,7 @@ function ChoiceInput({
       role={multi ? 'group' : 'radiogroup'}
       aria-label={multi ? 'Select all that apply' : 'Select one answer'}
     >
-      {(challenge.question.options ?? []).map((option, index) => {
+      {(question.question.options ?? []).map((option, index) => {
         const isSelected = selected.includes(option.id);
         return (
           <motion.button
@@ -127,9 +127,9 @@ function BooleanInput({
   );
 }
 
-function TextInput({ challenge, value, onChange, disabled }: Props) {
+function TextInput({ question, value, onChange, disabled }: Props) {
   const current = value?.kind === 'text' ? value.value : '';
-  const multiline = challenge.type === 'output';
+  const multiline = question.type === 'output';
 
   return (
     <div className="field">
@@ -142,7 +142,7 @@ function TextInput({ challenge, value, onChange, disabled }: Props) {
           className="textarea"
           value={current}
           onChange={(event) => onChange({ kind: 'text', value: event.target.value })}
-          placeholder={challenge.question.placeholder ?? 'Type the exact output'}
+          placeholder={question.question.placeholder ?? 'Type the exact output'}
           disabled={disabled}
           spellCheck={false}
           autoFocus
@@ -154,7 +154,7 @@ function TextInput({ challenge, value, onChange, disabled }: Props) {
           className="input"
           value={current}
           onChange={(event) => onChange({ kind: 'text', value: event.target.value })}
-          placeholder={challenge.question.placeholder ?? 'Your answer'}
+          placeholder={question.question.placeholder ?? 'Your answer'}
           disabled={disabled}
           spellCheck={false}
           autoComplete="off"
@@ -168,12 +168,12 @@ function TextInput({ challenge, value, onChange, disabled }: Props) {
   );
 }
 
-function NumericInput({ challenge, value, onChange, disabled }: Props) {
+function NumericInput({ question, value, onChange, disabled }: Props) {
   const current = value?.kind === 'number' && Number.isFinite(value.value) ? String(value.value) : '';
   return (
     <div className="field">
       <label className="label" htmlFor="answer-number">
-        Your answer{challenge.question.unit ? ` (${challenge.question.unit})` : ''}
+        Your answer{question.question.unit ? ` (${question.question.unit})` : ''}
       </label>
       <input
         id="answer-number"
@@ -187,7 +187,7 @@ function NumericInput({ challenge, value, onChange, disabled }: Props) {
             value: event.target.value === '' ? Number.NaN : Number(event.target.value),
           })
         }
-        placeholder={challenge.question.placeholder ?? '0'}
+        placeholder={question.question.placeholder ?? '0'}
         disabled={disabled}
         autoFocus
       />
@@ -200,8 +200,8 @@ function NumericInput({ challenge, value, onChange, disabled }: Props) {
  * keyboard-accessible by construction and impossible to fumble under time
  * pressure on a trackpad (spec section 46).
  */
-function OrderingInput({ challenge, value, onChange, disabled }: Props) {
-  const items = challenge.question.items ?? [];
+function OrderingInput({ question, value, onChange, disabled }: Props) {
+  const items = question.question.items ?? [];
   const order = value?.kind === 'order' && value.itemIds.length === items.length
     ? value.itemIds
     : items.map((item) => item.id);
@@ -256,9 +256,9 @@ function OrderingInput({ challenge, value, onChange, disabled }: Props) {
   );
 }
 
-function MatchingInput({ challenge, value, onChange, disabled }: Props) {
-  const left = challenge.question.left ?? [];
-  const right = challenge.question.right ?? [];
+function MatchingInput({ question, value, onChange, disabled }: Props) {
+  const left = question.question.left ?? [];
+  const right = question.question.right ?? [];
   const pairs = value?.kind === 'pairs' ? value.pairs : {};
 
   const set = (leftId: string, rightId: string) => {
@@ -298,12 +298,12 @@ function MatchingInput({ challenge, value, onChange, disabled }: Props) {
   );
 }
 
-function CodeInput({ challenge, value, onChange, disabled }: Props) {
-  const languages = challenge.question.languages ?? ['python'];
+function CodeInput({ question, value, onChange, disabled }: Props) {
+  const languages = question.question.languages ?? ['python'];
   const current =
     value?.kind === 'code'
       ? value
-      : { kind: 'code' as const, language: languages[0] ?? 'python', source: challenge.question.starterCode ?? '' };
+      : { kind: 'code' as const, language: languages[0] ?? 'python', source: question.question.starterCode ?? '' };
 
   return (
     <div className="stack">
@@ -339,10 +339,10 @@ function CodeInput({ challenge, value, onChange, disabled }: Props) {
         aria-label="Your code"
       />
 
-      {challenge.question.samples?.length ? (
+      {question.question.samples?.length ? (
         <div className="samples">
           <p className="label">Sample cases</p>
-          {challenge.question.samples.map((sample, index) => (
+          {question.question.samples.map((sample, index) => (
             <div key={index} className="samples__row">
               <div>
                 <span className="eyebrow">Input</span>

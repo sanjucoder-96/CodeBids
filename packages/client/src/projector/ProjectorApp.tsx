@@ -1,23 +1,36 @@
 /**
- * Projector mode (spec sections 24-29).
+ * Projector mode (spec section 16).
  *
  * Rules this surface obeys:
  *  - NO operator controls, ever.
  *  - Readable from the back of a hall: huge type, minimal chrome.
- *  - It switches itself based on game phase, and the organizer can pin a mode.
+ *  - It switches itself from the game phase, and the organizer can pin a mode.
  */
 
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { ProjectorLeaderboard } from './ProjectorLeaderboard.js';
+import { ProjectorQuestion } from './ProjectorQuestion.js';
+import { ProjectorPremiumIntro } from './ProjectorPremiumIntro.js';
 import { ProjectorAuction } from './ProjectorAuction.js';
 import { ProjectorReclaim } from './ProjectorReclaim.js';
-import { ProjectorFinal } from './ProjectorFinal.js';
+import { ProjectorStrategy } from './ProjectorStrategy.js';
+import { ProjectorFinalStretch } from './ProjectorFinalStretch.js';
+import { ProjectorPodium } from './ProjectorPodium.js';
 import { ProjectorResult } from './ProjectorResult.js';
 import { sound } from '../lib/sound.js';
 
-type View = 'leaderboard' | 'auction' | 'reclaim' | 'final' | 'result';
+type View =
+  | 'leaderboard'
+  | 'question'
+  | 'premium_intro'
+  | 'auction'
+  | 'reclaim'
+  | 'strategy'
+  | 'final_stretch'
+  | 'podium'
+  | 'result';
 
 export function ProjectorApp() {
   const connect = useStore((s) => s.connect);
@@ -93,9 +106,13 @@ function ProjectorStage() {
         transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
       >
         {view === 'leaderboard' ? <ProjectorLeaderboard /> : null}
+        {view === 'question' ? <ProjectorQuestion /> : null}
+        {view === 'premium_intro' ? <ProjectorPremiumIntro /> : null}
         {view === 'auction' ? <ProjectorAuction /> : null}
         {view === 'reclaim' ? <ProjectorReclaim /> : null}
-        {view === 'final' ? <ProjectorFinal /> : null}
+        {view === 'strategy' ? <ProjectorStrategy /> : null}
+        {view === 'final_stretch' ? <ProjectorFinalStretch /> : null}
+        {view === 'podium' ? <ProjectorPodium /> : null}
         {view === 'result' ? <ProjectorResult /> : null}
       </motion.div>
     </div>
@@ -107,22 +124,44 @@ export function useProjectorView(): View {
   const mode = useStore((s) => s.projectorMode);
   const game = useStore((s) => s.game);
   const auction = useStore((s) => s.auction);
-  const premium = useStore((s) => s.premium);
+  const hidden = useStore((s) => s.leaderboardHidden);
 
   if (mode !== 'auto') return mode as View;
 
-  const phase = game?.phase;
+  switch (game?.phase) {
+    case 'completed':
+    case 'final_results':
+      return 'podium';
 
-  if (phase === 'premium_reclaim' || premium?.stage === 'reclaim_offer') return 'reclaim';
+    case 'strategy_phase':
+      return 'strategy';
 
-  if (phase === 'final') {
-    // Before the final auction opens, hold the ceremonial title card.
-    if (!auction || auction.auction.status === 'pending') return 'final';
-    return 'auction';
+    case 'reclaim':
+      return 'reclaim';
+
+    case 'question_intro':
+      return 'question';
+
+    case 'premium_intro':
+      // The auction view has nothing to draw before an auction exists; the
+      // room gets the premium's card instead.
+      return 'premium_intro';
+
+    case 'auction_active':
+    case 'premium_authorized':
+      return 'auction';
+
+    case 'premium_solving':
+      return 'auction';
+
+    case 'premium_result':
+      return auction?.auction.winnerTeamId ? 'result' : hidden ? 'final_stretch' : 'leaderboard';
+
+    case 'question_active':
+      // While the board is sealed the hall gets the suspense card instead.
+      return hidden ? 'final_stretch' : 'question';
+
+    default:
+      return hidden ? 'final_stretch' : 'leaderboard';
   }
-
-  if (phase === 'auction' && auction && auction.auction.status !== 'closed') return 'auction';
-  if (phase === 'auction' && auction?.auction.status === 'closed') return 'result';
-
-  return 'leaderboard';
 }

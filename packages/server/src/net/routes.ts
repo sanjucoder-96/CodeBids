@@ -9,9 +9,9 @@ import type { AuthService } from '../auth.js';
 import { backupDatabase, type DB } from '../db/index.js';
 import {
   exportAuditText,
-  exportChallengeStats,
   exportCsv,
   exportJson,
+  exportSequenceStats,
   premiumSummary,
 } from '../export.js';
 import { connectionInfo } from './netinfo.js';
@@ -95,16 +95,41 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   app.get('/api/organizer/teams', async (request, reply) => {
     if (!requireOrganizer(request, reply)) return;
     const repo = engine.getRepo();
+    const rows = engine.leaderboard();
     return repo.listTeams().map((team) => ({
       ...team,
       joinCode: repo.getJoinCode(team.id),
       stats: engine.teamStats(team.id),
+      rank: rows.find((r) => r.teamId === team.id)?.rank ?? 0,
+      podium: rows.find((r) => r.teamId === team.id)?.podium ?? null,
     }));
   });
 
-  app.get('/api/organizer/challenges', async (request, reply) => {
+  app.get('/api/organizer/sequence', async (request, reply) => {
     if (!requireOrganizer(request, reply)) return;
-    return engine.challengeSummaries();
+    return engine.sequenceEntries();
+  });
+
+  app.get('/api/organizer/questions', async (request, reply) => {
+    if (!requireOrganizer(request, reply)) return;
+    return engine.listQuestions().map((q) => ({
+      id: q.id,
+      kind: q.kind,
+      title: q.title,
+      domain: q.domain,
+      difficulty: q.difficulty,
+      timeLimit: q.timeLimit,
+      accessKey: q.accessKey,
+    }));
+  });
+
+  /** The complete per-team record (spec section 12). */
+  app.get('/api/organizer/team/:teamId', async (request, reply) => {
+    if (!requireOrganizer(request, reply)) return;
+    const { teamId } = request.params as { teamId: string };
+    const dossier = engine.teamDossier(teamId);
+    if (!dossier) return reply.code(404).send({ error: 'unknown_team' });
+    return dossier;
   });
 
   app.get('/api/organizer/audit', async (request, reply) => {
@@ -120,7 +145,7 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   app.get('/api/organizer/stats', async (request, reply) => {
     if (!requireOrganizer(request, reply)) return;
-    return exportChallengeStats(engine);
+    return exportSequenceStats(engine);
   });
 
   /* --- export --------------------------------------------------------- */

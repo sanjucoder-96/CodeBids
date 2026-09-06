@@ -1,8 +1,8 @@
 /**
- * Leaderboard rendering and the animation-engineering rules from spec 43:
+ * Leaderboard rendering and its animation rules:
  *  - stable keys (team id, never array index),
  *  - no duplicated rows under rapid consecutive updates,
- *  - a qualification divider that sits between the right two rows,
+ *  - podium marking that is never colour-only,
  *  - rank movement indicators.
  */
 
@@ -23,17 +23,14 @@ function rows(spec: [string, number][]): LeaderboardRow[] {
     capital,
     startingCapital: 1000,
     delta: capital - 1000,
-    qualified: index < 3,
+    podium: index < 3 ? index + 1 : null,
     previousRank: null,
     connectionStatus: 'online' as const,
     status: 'active' as const,
   }));
 }
 
-const base = {
-  qualifiers: 3,
-  currencySymbol: '₹',
-};
+const base = { currencySymbol: '₹' };
 
 describe('Leaderboard', () => {
   it('renders one row per team with capital and delta', () => {
@@ -100,36 +97,28 @@ describe('Leaderboard', () => {
     expect(moves).toContain('down');
   });
 
-  it('draws the qualification divider between the last qualifier and the first non-qualifier', () => {
+  it('marks the three podium places, and not colour-only (spec 14)', () => {
     const { container } = render(
       <Leaderboard
-        rows={rows([['T01', 2500], ['T02', 2000], ['T03', 1500], ['T04', 1000], ['T05', 900]])}
+        rows={rows([['T01', 2500], ['T02', 2000], ['T03', 1500], ['T04', 900]])}
         {...base}
       />,
     );
-    const line = container.querySelector('.lb__line');
-    expect(line).toBeTruthy();
-    expect(line?.textContent).toContain('TOP 3 ADVANCE');
+    const places = [...container.querySelectorAll('.lb__row')].map((r) =>
+      r.getAttribute('data-podium'),
+    );
+    expect(places).toEqual(['1', '2', '3', null]);
 
-    // It must be positioned immediately before the 4th team's row.
-    const slots = [...container.querySelectorAll('.lb__slot')];
-    const dividerSlot = slots.find((s) => s.querySelector('.lb__line'));
-    expect(dividerSlot?.querySelector('.lb__team-id')?.textContent).toBe('T04');
+    // The medal badge carries the place as text, not just a colour.
+    const medals = [...container.querySelectorAll('.lb__medal')].map((m) => m.textContent);
+    expect(medals).toEqual(['1', '2', '3']);
   });
 
-  it('hides the divider when everybody qualifies', () => {
+  it('can suppress the podium treatment mid-round', () => {
     const { container } = render(
-      <Leaderboard rows={rows([['T01', 2000], ['T02', 1000]])} {...base} qualifiers={10} />,
+      <Leaderboard rows={rows([['T01', 2500], ['T02', 2000]])} {...base} showPodium={false} />,
     );
-    expect(container.querySelector('.lb__line')).toBeNull();
-  });
-
-  it('marks qualified rows so the styling is not colour-only (spec 46)', () => {
-    const { container } = render(
-      <Leaderboard rows={rows([['T01', 2500], ['T02', 2000], ['T03', 1500], ['T04', 900]])} {...base} />,
-    );
-    const flags = [...container.querySelectorAll('.lb__row')].map((r) => r.getAttribute('data-qualified'));
-    expect(flags).toEqual(['true', 'true', 'true', 'false']);
+    expect(container.querySelector('.lb__medal')).toBeNull();
   });
 
   it('marks the viewer own row and labels it', () => {
@@ -163,7 +152,7 @@ describe('Leaderboard', () => {
 
   it('renders an empty state rather than a blank panel', () => {
     render(<Leaderboard rows={[]} {...base} />);
-    expect(screen.getByText(/No teams yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/No teams on the board yet/i)).toBeInTheDocument();
   });
 
   it('formats capital and profit with the configured currency', () => {

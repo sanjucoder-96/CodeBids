@@ -5,6 +5,12 @@ import { createRoot } from 'react-dom/client';
 // (spec section 41).
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
+// Display/UI faces for the competitive identity. Bundled locally, used
+// sparingly: Russo One for projector headlines, Chakra Petch for labels.
+import '@fontsource/chakra-petch/400.css';
+import '@fontsource/chakra-petch/600.css';
+import '@fontsource/chakra-petch/700.css';
+import '@fontsource/russo-one/400.css';
 
 import './styles/tokens.css';
 import './styles/base.css';
