@@ -700,3 +700,22 @@
 .pj-leaderboard__board[data-density='normal'] .lb--projector .lb__row {
   padding: var(--sp-3) var(--sp-6);
 }
+
+/* ==================================================================== *
+ * FILTER CHIPS
+ *
+ * `data-active` was already being set on the event-log filters but was
+ * never styled, so the selected filter looked identical to the others.
+ * ==================================================================== */
+
+.btn[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent-soft);
+}
+
+.input--sm {
+  padding: 6px var(--sp-3);
+  font-size: var(--fs-xs);
+  min-height: 32px;
+}

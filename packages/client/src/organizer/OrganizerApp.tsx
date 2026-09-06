@@ -14,6 +14,7 @@ import { AuctionControl } from './AuctionControl.js';
 import { PremiumControl } from './PremiumControl.js';
 import { LiveEventsPanel } from './LiveEventsPanel.js';
 import { TeamsPanel } from './TeamsPanel.js';
+import { QuestionsPanel } from './QuestionsPanel.js';
 import { EventLog } from './EventLog.js';
 import { ConfigPanel } from './ConfigPanel.js';
 import { SimulationPanel } from './SimulationPanel.js';
@@ -23,7 +24,7 @@ import { fadeUp } from '../lib/motion.js';
 
 const TOKEN_KEY = 'cm.organizer.token';
 
-type Tab = 'control' | 'teams' | 'config' | 'log' | 'tools';
+type Tab = 'control' | 'questions' | 'teams' | 'config' | 'log' | 'tools';
 
 export function OrganizerApp() {
   const [token, setToken] = useState<string | null>(() => {
@@ -120,6 +121,7 @@ function OrganizerShell({ token, onLogout }: { token: string; onLogout: () => vo
           {(
             [
               ['control', 'Control'],
+              ['questions', 'Questions'],
               ['teams', 'Teams'],
               ['config', 'Config'],
               ['log', 'Event log'],
@@ -183,6 +185,7 @@ function OrganizerShell({ token, onLogout }: { token: string; onLogout: () => vo
           </motion.div>
         ) : null}
 
+        {tab === 'questions' ? <QuestionsPanel token={token} /> : null}
         {tab === 'teams' ? <TeamsPanel token={token} /> : null}
         {tab === 'config' ? <ConfigPanel /> : null}
         {tab === 'log' ? <EventLog token={token} /> : null}

@@ -3509,3 +3509,179 @@ kbd {
     font-size: var(--fs-md);
   }
 }
+
+/* ==================================================================== *
+ * ORGANIZER: QUESTION KEYS
+ *
+ * The operator reads the key aloud while looking at the room, not at the
+ * screen, so the live key is set large and monospaced with generous
+ * letter-spacing. The pool table underneath is a reference, not the
+ * primary object, and is sized accordingly.
+ * ==================================================================== */
+
+.qkey {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  padding: var(--sp-5) var(--sp-6);
+  border-radius: var(--r-lg);
+  border: 1px solid rgba(61, 139, 255, 0.35);
+  background: var(--accent-dim);
+}
+
+.qkey__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.qkey__label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-widest);
+  color: var(--accent-soft);
+}
+
+.qkey__title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.qkey__value {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.qkey__icon {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.qkey__code {
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  color: var(--text-strong);
+  user-select: all;
+}
+
+.qkey__none {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.qkey__none-title {
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  color: var(--premium);
+}
+
+.qtable__search {
+  flex: 1;
+  min-width: 180px;
+}
+
+.qtable {
+  display: flex;
+  flex-direction: column;
+  max-height: 560px;
+  overflow-y: auto;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+
+.qtable__head,
+.qtable__row {
+  display: grid;
+  grid-template-columns: 74px minmax(160px, 2fr) 130px 96px 60px 110px;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-sm);
+}
+
+.qtable__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.qtable__row + .qtable__row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.qtable__row[data-state='complete'] {
+  opacity: 0.5;
+}
+
+.qtable__row[data-open='true'] {
+  background: var(--accent-dim);
+  opacity: 1;
+}
+
+.qtable__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qtable__diff {
+  font-family: var(--font-ui);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+}
+
+.qtable__diff[data-difficulty='easy'] { color: var(--diff-easy); }
+.qtable__diff[data-difficulty='medium'] { color: var(--diff-medium); }
+.qtable__diff[data-difficulty='hard'] { color: var(--diff-hard); }
+.qtable__diff[data-difficulty='very_hard'] { color: var(--diff-very-hard); }
+
+.qtable__key {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-strong);
+  user-select: all;
+}
+
+.qtable__key .dim {
+  font-size: var(--fs-2xs);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+@media (max-width: 900px) {
+  .qtable__head,
+  .qtable__row {
+    grid-template-columns: 64px minmax(120px, 2fr) 90px 100px;
+  }
+
+  .qtable__head span:nth-child(3),
+  .qtable__row > *:nth-child(3),
+  .qtable__head span:nth-child(5),
+  .qtable__row > *:nth-child(5) {
+    display: none;
+  }
+}

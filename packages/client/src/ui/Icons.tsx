@@ -220,3 +220,15 @@ export function DomainIcon({ size = 24, className }: IconProps) {
     </svg>
   );
 }
+
+/** The printed key an operator reads aloud before a question opens. */
+export function KeyIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <circle cx="8" cy="12" r="4" />
+      <path d="M12 12h9" />
+      <path d="M17.5 12v3.5" />
+      <path d="M20.5 12v2.5" />
+    </svg>
+  );
+}
