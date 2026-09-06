@@ -16,6 +16,7 @@ interface Args {
   port: number;
   dbFile: string;
   passcode?: string;
+  teamCodeSeed?: number;
   seed?: number;
   /** --seed replaces the existing field instead of adding to it. */
   replace?: boolean;
@@ -44,6 +45,10 @@ function parseArgs(argv: string[]): Args {
         args.passcode = String(next);
         i++;
         break;
+      case '--team-seed':
+        args.teamCodeSeed = Number(next);
+        i++;
+        break;
       case '--seed':
         args.seed = Number(next ?? 20);
         if (next && !next.startsWith('--')) i++;
@@ -70,7 +75,9 @@ CSI CLUB - CODE MARKET  (v${VERSION})
 
   --port <n>       HTTP + WebSocket port (default 4400)
   --db <path>      SQLite file (default ./data/code-market.db)
-  --passcode <s>   Organizer console passcode
+  --passcode <s>   Organizer console passcode (else generated once and kept)
+  --team-seed <n>  Reproducible join codes: the same seed prints the same
+                   cards on any machine. Omitted, codes are random.
   --seed <n>       Create n demo teams, then exit (adds to any that exist)
   --replace        With --seed: wipe the existing field first
   --reset          Clear all game data (keeps teams), then exit
@@ -130,6 +137,9 @@ async function main(): Promise<void> {
     dbFile: args.dbFile,
     port: args.port,
     ...(args.passcode ? { organizerPasscode: args.passcode } : {}),
+    ...(Number.isFinite(args.teamCodeSeed)
+      ? { teamCodeSeed: args.teamCodeSeed as number }
+      : {}),
   });
 
   if (args.reset) {

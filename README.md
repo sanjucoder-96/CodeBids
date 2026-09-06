@@ -388,6 +388,37 @@ cards — *Teams → Print join codes* produces a clean printable list.
 A team enters its join code once; the session persists across refreshes and server restarts. Team
 01 cannot impersonate Team 02 without Team 02's code.
 
+### Matching two machines
+
+Most of what you see is identical on every install, because it lives in the committed source:
+
+| Thing | Same on every install? |
+|---|---|
+| Question keys | Yes |
+| Team names, and their order | Yes |
+| Operator passcode | No, generated once per install and then kept |
+| Join codes | No, random per install |
+| Which questions are drawn, and in what order | No, random per round |
+
+The database is not in the repository, because it holds the live event: capital, bids, attempts and
+the audit log. A clone therefore starts empty and invents its own passcode and codes. That is fine
+for the event itself, where one machine is the server, but it means a second machine used for
+rehearsal will not match the cards you printed.
+
+To make two machines agree, fix both values on the command line:
+
+```bash
+node packages/server/dist/index.js --passcode 4821 --team-seed 2026 --seed 20 --replace
+```
+
+The same passcode and the same `--team-seed` produce the same teams and the same join codes on any
+machine, so a rehearsal laptop matches the event server exactly.
+
+> **Keep the seed out of the repository.** Join codes are what stop one team signing in as another.
+> Passing the seed on the command line keeps it with the operator; committing it to a script in the
+> repo would hand every team every code. Without `--team-seed`, codes stay cryptographically random,
+> which is the right default.
+
 ---
 
 ## Running the event

@@ -27,6 +27,11 @@ export interface AppOptions {
   host?: string;
   backupDir?: string;
   organizerPasscode?: string;
+  /**
+   * Seed for team join codes. Omitted, codes are cryptographically random.
+   * Supplied, two machines preparing the same event print the same cards.
+   */
+  teamCodeSeed?: number;
   /** Skip static file serving (tests). */
   serveClient?: boolean;
   /** Skip toolchain probing (tests) - it spawns processes. */
@@ -98,6 +103,7 @@ export async function createApp(options: AppOptions): Promise<App> {
     secret,
     runner,
     ...(options.now ? { now: options.now } : {}),
+    ...(options.teamCodeSeed === undefined ? {} : { teamCodeSeed: options.teamCodeSeed }),
   });
   engine.seedQuestions();
   // A restart must never leave stale "online" flags behind.

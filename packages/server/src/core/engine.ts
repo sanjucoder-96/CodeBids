@@ -35,6 +35,7 @@ import {
   finalPremiumIndex,
   generateSequence,
   maxBid,
+  mulberry32,
   nextBidAmount,
   nextCandidate,
   normalSlots,
@@ -125,6 +126,12 @@ export interface EngineDeps {
   runner: CodeRunner | null;
   /** Injectable clock so tests can run without real time passing. */
   now?: () => number;
+  /**
+   * Seed for team join codes. Omitted, codes are cryptographically random.
+   * Supplied, the same seed produces the same codes, so two machines preparing
+   * the same event print the same cards.
+   */
+  teamCodeSeed?: number;
 }
 
 /* ------------------------------------------------------------------ *
@@ -138,6 +145,8 @@ export class GameEngine {
   private readonly runner: CodeRunner | null;
   private readonly listeners = new Set<EngineListener>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  /** Non-null only when the operator asked for reproducible join codes. */
+  private readonly teamCodeRand: (() => number) | null;
 
   private config: GameConfig;
   private previousRanks = new Map<string, number>();
@@ -150,6 +159,7 @@ export class GameEngine {
     this.repo = deps.repo;
     this.auth = deps.auth;
     this.secret = deps.secret;
+    this.teamCodeRand = deps.teamCodeSeed === undefined ? null : mulberry32(deps.teamCodeSeed);
     this.runner = deps.runner;
     this.now = deps.now ?? (() => Date.now());
     this.config = this.repo.loadConfig();
@@ -1938,7 +1948,7 @@ export class GameEngine {
 
   private uniqueJoinCode(): string {
     for (let i = 0; i < 200; i++) {
-      const code = generateJoinCode();
+      const code = generateJoinCode(6, this.teamCodeRand ?? undefined);
       if (!this.repo.getTeamByJoinCode(code)) return code;
     }
     throw new EngineError('join_code_exhausted', 'Could not allocate a unique join code');

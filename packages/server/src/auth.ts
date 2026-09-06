@@ -28,9 +28,25 @@ export interface Identity {
 /** Unambiguous alphabet: no O/0, no I/1. */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-export function generateJoinCode(length = 6): string {
-  const bytes = randomBytes(length);
+/**
+ * A team's join code.
+ *
+ * Random by default, because a guessable code lets one team sign in as
+ * another. Pass `rand` (a seeded generator) to make a run reproducible, so two
+ * machines preparing the same event produce the same cards. That is an
+ * explicit opt-in: the seed lives in the operator's command, never in the
+ * repository.
+ */
+export function generateJoinCode(length = 6, rand?: () => number): string {
   let out = '';
+  if (rand) {
+    for (let i = 0; i < length; i++) {
+      const pick = Math.floor(rand() * CODE_ALPHABET.length) % CODE_ALPHABET.length;
+      out += CODE_ALPHABET[pick];
+    }
+    return out;
+  }
+  const bytes = randomBytes(length);
   for (let i = 0; i < length; i++) {
     out += CODE_ALPHABET[(bytes[i] as number) % CODE_ALPHABET.length];
   }
