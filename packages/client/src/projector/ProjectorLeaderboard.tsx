@@ -15,7 +15,7 @@ import { Leaderboard } from '../ui/Leaderboard.js';
 import { slotLabel } from '../lib/format.js';
 
 /** As many rows as stay legible from the back of a hall. */
-export const MAX_PROJECTOR_ROWS = 12;
+export const MAX_PROJECTOR_ROWS = 24;
 
 export function ProjectorLeaderboard() {
   const leaderboard = useStore((s) => s.leaderboard);
@@ -27,7 +27,7 @@ export function ProjectorLeaderboard() {
 
   const online = teams.filter((t) => t.connectionStatus === 'online').length;
   const shown = Math.min(leaderboard.length, MAX_PROJECTOR_ROWS);
-  const density = shown <= 6 ? 'roomy' : shown <= 10 ? 'normal' : 'dense';
+  const density = shown <= 6 ? 'roomy' : shown <= 10 ? 'normal' : shown <= 14 ? 'dense' : 'ultra';
 
   return (
     <div className="pj-leaderboard">

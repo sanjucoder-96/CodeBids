@@ -2057,7 +2057,14 @@ export class GameEngine {
               ? 'resolved'
               : 'locked';
       } else {
-        questionState = participation?.state ?? 'locked';
+        const base = participation?.state ?? 'locked';
+        // When keys are off, opening a question makes it immediately joinable
+        // for every team — there is no unlock step to wait through.
+        const phase = this.repo.getGameState().phase;
+        questionState =
+          base === 'locked' && !this.config.requireAccessKey && phase === 'question_active'
+            ? 'available'
+            : base;
       }
     }
 

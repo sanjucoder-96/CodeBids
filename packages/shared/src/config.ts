@@ -139,7 +139,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   capitalFloor: 0,
 
   questionOptIn: true,
-  requireAccessKey: true,
+  requireAccessKey: false,
   questionReward: {
     mode: 'difficulty',
     base: 200,

@@ -48,7 +48,7 @@ export function GameControl() {
         ? { label: `Open ${slotLabel(nextSlot.blockNumber, nextSlot.positionInBlock, nextSlot.kind)}`, cmd: 'ADVANCE' }
         : { label: 'Start round', cmd: 'START_GAME' };
     }
-    if (phase === 'question_intro') return { label: 'Open the question', cmd: 'OPEN_QUESTION' };
+    if (phase === 'question_intro') return { label: 'Open for all teams', cmd: 'OPEN_QUESTION' };
     if (phase === 'question_active') return { label: 'Close the question', cmd: 'CLOSE_QUESTION' };
     if (phase === 'premium_intro') return { label: 'Start the auction', cmd: 'START_AUCTION' };
     if (phase === 'premium_authorized') return { label: 'Start attempt', cmd: 'START_PREMIUM_ATTEMPT' };

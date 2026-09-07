@@ -230,10 +230,14 @@ A rich team can bid higher — and has more at risk. All bid validation happens 
 ### Normal questions
 
 ```
-Intro card (domain · difficulty · solve time) → question opens → team enters the
-printed KEY → team decides JOIN or SIT OUT → question is revealed and that team's
-clock starts → submit → server evaluates → capital changes → leaderboard updates
+Intro card (domain · difficulty · solve time) → organizer opens it for all teams
+→ each team decides JOIN or SIT OUT → question is revealed and that team's clock
+starts → submit → server evaluates → capital changes → leaderboard updates
 ```
+
+By default there is **no access code**: the organizer presses **Open for all teams** and every team
+can immediately choose JOIN or SIT OUT. (An optional per-question key can be switched on in Config —
+*Require the printed key to unlock a question* — for a paper-based variant; it is off by default.)
 
 The risk decision is made **before** the question is revealed. Sitting out costs nothing. Results
 settle automatically — **volunteers never report a normal answer**.
@@ -429,7 +433,7 @@ phase*, *Reveal the podium* — so the operator never has to work out which cont
 
 1. **Start round.** The server draws the sequence and shows it as a strip of slots.
 2. Press the primary button, or click any slot in the strip to jump to it.
-   - A **normal** question shows an intro card first; read its access key aloud (shown on the tile).
+   - A **normal** question shows an intro card first, then **Open for all teams** lets every team join.
    - A **premium** shows its announcement, then you start the auction when the room is ready.
 3. Normal questions settle themselves. Watch **Live events** for anything needing attention.
 4. **Close the question** when the room is done — anyone still mid-attempt is recorded as a timeout.

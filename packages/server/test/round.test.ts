@@ -585,3 +585,30 @@ describe('each team runs its own solve clock', () => {
     expect(h.engine.teamView('T01')?.questionDeadline).toBeNull();
   });
 });
+
+describe('opening a question for all teams (no access key)', () => {
+  it('makes the question joinable the moment it opens, with no key step', () => {
+    // Keys are off by default now: the organizer just opens the question.
+    expect(h.engine.getConfig().requireAccessKey).toBe(false);
+    startRound(h);
+    const { question } = openFirstQuestion(h);
+
+    // Every team sees the question as ready to take on, not locked behind a key.
+    const view = h.engine.teamView('T01');
+    expect(view?.questionState).toBe('available');
+
+    // And it can join directly, without ever unlocking.
+    h.engine.joinQuestion('T01', question.id);
+    expect(h.engine.teamView('T01')?.questionState).toBe('in_progress');
+  });
+
+  it('still gates on a key when an organizer turns keys back on', () => {
+    h.engine.updateConfig({ requireAccessKey: true });
+    startRound(h);
+    const { question } = openFirstQuestion(h);
+
+    expect(h.engine.teamView('T01')?.questionState).toBe('locked');
+    // Joining without unlocking is refused.
+    expect(() => h.engine.joinQuestion('T01', question.id)).toThrow(/key/i);
+  });
+});
