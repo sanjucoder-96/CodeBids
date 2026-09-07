@@ -637,6 +637,10 @@ export class GameEngine {
       throw new EngineError('already_attempted', 'Your team already attempted this question');
     }
 
+    if (team.capital <= this.config.capitalFloor) {
+      throw new EngineError('no_capital', 'You don\'t have enough capital to play this question');
+    }
+
     const participation = this.repo.getParticipation(teamId, slot.index);
     if (slot.kind === 'premium') {
       const premium = this.repo.getPremiumState(questionId);

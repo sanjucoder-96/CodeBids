@@ -76,6 +76,22 @@ export function QuestionScreen() {
     }
   }
 
+  const broke = me.capital <= 0;
+
+  if (broke) {
+    return (
+      <div className="screen screen--center">
+        <motion.div className="panel panel--pad" variants={scaleIn} initial="hidden" animate="show">
+          <div className="eyebrow">{blockLabel(question.blockNumber, question.positionInBlock, config.questionsPerBlock)}</div>
+          <h2 className="screen__title">No Capital Left</h2>
+          <p className="muted">
+            You don't have enough {symbol} to play this question. Wait for the next round.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
   if (skipped) {
     return (
       <div className="screen screen--center">
