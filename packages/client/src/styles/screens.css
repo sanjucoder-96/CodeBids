@@ -4098,3 +4098,12 @@ kbd {
 
 .prem-decide__status[data-choice='take'] { color: var(--gain); }
 .prem-decide__status[data-choice='sit_out'] { color: var(--text-muted); }
+
+/* Normal-question TAKE / SIT-OUT countdown */
+.q-card__decide-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}

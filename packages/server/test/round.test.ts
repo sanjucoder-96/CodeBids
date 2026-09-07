@@ -524,7 +524,7 @@ describe('question flow', () => {
 });
 
 describe('the advertised clock', () => {
-  it('is cleared when the question opens, so no stale GET READY lingers', () => {
+  it('swaps the GET READY intro for the TAKE / SIT-OUT decision countdown', () => {
     startRound(h);
     h.engine.advance();
 
@@ -533,12 +533,11 @@ describe('the advertised clock', () => {
     expect(h.engine.gameState().timer.endsAt).not.toBeNull();
     expect(h.engine.gameState().timer.label).toBe('GET READY');
 
-    // Opening the question ends that beat. Each team's solve clock is its own,
-    // so the global clock must go quiet rather than sit at 00:00.
+    // Opening the question starts the synchronised decision window (spec 6, 7).
     h.engine.openQuestion();
     expect(h.engine.gameState().phase).toBe('question_active');
-    expect(h.engine.gameState().timer.endsAt).toBeNull();
-    expect(h.engine.gameState().timer.label).toBeNull();
+    expect(h.engine.gameState().timer.label).toBe('TAKE OR SIT OUT');
+    expect(h.engine.gameState().timer.endsAt).not.toBeNull();
   });
 });
 
@@ -612,5 +611,47 @@ describe('opening a question for all teams (no access key)', () => {
     expect(h.engine.teamView('T01')?.questionState).toBe('locked');
     // Joining without unlocking is refused.
     expect(() => h.engine.joinQuestion('T01', question.id)).toThrow(/key/i);
+  });
+});
+
+describe('normal-question TAKE / SIT-OUT window (spec 6, 7)', () => {
+  it('opens a decision countdown when the question opens', () => {
+    startRound(h);
+    openFirstQuestion(h);
+    const timer = h.engine.gameState().timer;
+    expect(timer.label).toBe('TAKE OR SIT OUT');
+    expect(timer.duration).toBe(h.engine.getConfig().takeDecisionSeconds);
+    expect(timer.endsAt).toBeGreaterThan(Date.now());
+  });
+
+  it('defaults non-deciders to sitting out when the window lapses', () => {
+    startRound(h, 4);
+    const { question } = openFirstQuestion(h);
+
+    // T01 takes it; T02 explicitly sits out; T03 and T04 do nothing.
+    h.engine.joinQuestion('T01', question.id);
+    h.engine.skipQuestion('T02', question.id);
+
+    // The window lapses.
+    expect(h.engine.fireTimer(`question_decision:${h.engine.currentSlot()?.index}`)).toBe(true);
+
+    expect(h.engine.teamView('T01')?.questionState).toBe('in_progress');
+    expect(h.engine.teamView('T02')?.questionState).toBe('skipped');
+    expect(h.engine.teamView('T03')?.questionState).toBe('skipped');
+    expect(h.engine.teamView('T04')?.questionState).toBe('skipped');
+
+    // A team that never chose cannot join after the window closed.
+    expect(() => h.engine.joinQuestion('T03', question.id)).toThrow();
+  });
+
+  it('leaves the decider still solving after the window closes', () => {
+    startRound(h, 3);
+    const { question } = openFirstQuestion(h);
+    h.engine.joinQuestion('T01', question.id);
+    const deadline = h.engine.teamView('T01')?.questionDeadline;
+    h.engine.fireTimer(`question_decision:${h.engine.currentSlot()?.index}`);
+    // T01 keeps its own solve clock; the decision window does not end its attempt.
+    expect(h.engine.teamView('T01')?.questionState).toBe('in_progress');
+    expect(h.engine.teamView('T01')?.questionDeadline).toBe(deadline);
   });
 });

@@ -221,7 +221,17 @@ export class GameEngine {
   restoreTimers(): void {
     const state = this.repo.getGameState();
     if (state.timer.endsAt && state.timer.endsAt > this.now()) {
-      this.scheduleGlobalTimer(state.timer.endsAt, state.timer.label ?? 'TIMER', state.phase);
+      if (state.phase === 'question_active' && state.timer.label === 'TAKE OR SIT OUT') {
+        // The decision window auto-skips non-deciders; it must not close the
+        // question the way the generic global timer does.
+        this.setTimer(
+          `question_decision:${state.slotIndex}`,
+          Math.max(0, state.timer.endsAt - this.now()),
+          () => this.closeQuestionDecision(state.slotIndex),
+        );
+      } else {
+        this.scheduleGlobalTimer(state.timer.endsAt, state.timer.label ?? 'TIMER', state.phase);
+      }
     }
     for (const premium of this.repo.listPremiumStates()) {
       if (premium.stage === 'reclaim_offer' && premium.offerDeadline) {
@@ -559,12 +569,21 @@ export class GameEngine {
     }
     const question = this.repo.getQuestion(slot.questionId) as Question;
     this.clearTimer('intro');
-    // Cancelling the Node timer is not enough: the advertised clock is part of
-    // game state, and a leftover "GET READY 00:00" would sit in every header
-    // for the whole question. Each team's solve clock is its own.
-    this.repo.saveGameState({ timer: { endsAt: null, duration: null, label: null } });
+
+    // A synchronised TAKE / SIT-OUT window (spec 6, 7), the same as premiums:
+    // every team has the same countdown to decide whether to take the question.
+    // A team that never chooses defaults to sitting out when it lapses. Each
+    // team's own solve clock still starts when it takes the question.
+    const decideSeconds = Math.max(1, this.config.takeDecisionSeconds);
+    const decideEndsAt = this.now() + decideSeconds * 1000;
+    this.repo.saveGameState({
+      timer: { endsAt: decideEndsAt, duration: decideSeconds, label: 'TAKE OR SIT OUT' },
+    });
 
     const state = this.setPhase('question_active');
+    this.setTimer(`question_decision:${slot.index}`, decideSeconds * 1000, () =>
+      this.closeQuestionDecision(slot.index),
+    );
     this.audit('QUESTION_OPENED', { questionId: question.id, slotIndex: slot.index });
     this.emit(
       'QUESTION_OPENED',
@@ -574,6 +593,48 @@ export class GameEngine {
     this.broadcastAllTeamViews();
     this.broadcastLiveEvents();
     return state;
+  }
+
+  /**
+   * The TAKE / SIT-OUT window for a normal question has lapsed. Every active
+   * team that did not take it (or explicitly sit out) is defaulted to sitting
+   * out (spec 7), which also locks it out of joining late. Teams that took the
+   * question keep solving on their own clocks.
+   */
+  private closeQuestionDecision(slotIndex: number): void {
+    const slot = this.repo.getSlot(slotIndex);
+    if (!slot || slot.kind !== 'normal') return;
+    const state = this.repo.getGameState();
+    if (state.phase !== 'question_active' || state.slotIndex !== slotIndex) return;
+
+    // Retire the decision countdown; solving teams have their own clocks.
+    if (state.timer.label === 'TAKE OR SIT OUT') {
+      this.repo.saveGameState({ timer: { endsAt: null, duration: null, label: null } });
+    }
+
+    const engagedStates = ['in_progress', 'submitted', 'resolved', 'skipped'];
+    for (const team of this.repo.listTeams()) {
+      if (team.status !== 'active') continue;
+      if (this.repo.hasAttempt(team.id, slotIndex)) continue;
+      const participation = this.repo.getParticipation(team.id, slotIndex);
+      if (participation && engagedStates.includes(participation.state)) continue;
+      this.repo.setParticipation(team.id, slotIndex, slot.questionId, 'skipped');
+      this.repo.insertAttempt({
+        teamId: team.id,
+        questionId: slot.questionId,
+        slotIndex,
+        attemptNumber: 1,
+        result: 'skipped',
+        scoreChange: 0,
+      });
+      this.audit('QUESTION_SIT_OUT_DEFAULT', {
+        teamId: team.id,
+        questionId: slot.questionId,
+        slotIndex,
+      });
+    }
+    this.broadcastAllTeamViews();
+    this.broadcastLiveEvents();
   }
 
   closeQuestion(): GameState {
@@ -595,6 +656,7 @@ export class GameEngine {
     this.repo.setSlotState(slotIndex, 'complete');
     this.clearTimer('global');
     this.clearTimer('intro');
+    this.clearTimer(`question_decision:${slotIndex}`);
     this.repo.saveGameState({ timer: { endsAt: null, duration: null, label: null } });
 
     if (!silent) {
@@ -1925,6 +1987,10 @@ export class GameEngine {
     }
     if (key.startsWith('decision:')) {
       this.resolvePremiumDecisions(key.slice('decision:'.length));
+      return true;
+    }
+    if (key.startsWith('question_decision:')) {
+      this.closeQuestionDecision(Number(key.slice('question_decision:'.length)));
       return true;
     }
     if (key.startsWith('premium:')) {

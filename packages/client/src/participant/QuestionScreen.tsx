@@ -14,11 +14,13 @@ import { domainLabel, blockLabel, difficultyLabel, typeLabel } from '../lib/form
 import { scaleIn } from '../lib/motion.js';
 import { sound } from '../lib/sound.js';
 import { LockIcon, UnlockIcon } from '../ui/Icons.js';
+import { Countdown } from '../ui/Countdown.js';
 
 export function QuestionScreen() {
   const question = useStore((s) => s.question);
   const me = useStore((s) => s.me);
   const config = useStore((s) => s.config);
+  const game = useStore((s) => s.game);
   const call = useStore((s) => s.call);
   const pushToast = useStore((s) => s.pushToast);
 
@@ -224,6 +226,20 @@ export function QuestionScreen() {
                   Take it on
                 </button>
               </div>
+              {game?.timer.endsAt && game.timer.label === 'TAKE OR SIT OUT' ? (
+                <div className="q-card__decide-timer">
+                  <Countdown
+                    endsAt={game.timer.endsAt}
+                    duration={game.timer.duration}
+                    label="Decide within"
+                    size="md"
+                    tick
+                  />
+                  <p className="dim" style={{ fontSize: 'var(--fs-xs)', textAlign: 'center' }}>
+                    No choice before the timer ends counts as sitting out.
+                  </p>
+                </div>
+              ) : null}
           </motion.div>
         )}
       </motion.div>
