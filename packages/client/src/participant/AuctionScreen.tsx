@@ -1,23 +1,28 @@
 /**
- * The participant view of a live PHYSICAL auction (spec section 23).
+ * The participant view of a live auction.
  *
- * Bidding happens with the paddle in the room. This screen exists so the team
- * can see, instantly and unambiguously: the current bid, who is still in, their
- * own ceiling, and whether they were just outbid.
+ * Teams bid from their own laptop: one tap raises to the next call, the server
+ * validates it against the team's ceiling (capital - reserve), and every
+ * surface — this screen, the other teams' screens and the projector — updates
+ * in real time. The organizer can still record a bid on a team's behalf if a
+ * laptop has died, so the room is never blocked.
  */
 
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { RollingNumber } from '../ui/AnimatedNumber.js';
 import { money, domainLabel, difficultyLabel } from '../lib/format.js';
 import { fadeUp, staggerChildren } from '../lib/motion.js';
-import { DiamondIcon, FlameIcon } from '../ui/Icons.js';
+import { DiamondIcon, FlameIcon, GavelIcon } from '../ui/Icons.js';
 
 export function AuctionScreen() {
   const auction = useStore((s) => s.auction);
   const me = useStore((s) => s.me);
   const teams = useStore((s) => s.teams);
+  const call = useStore((s) => s.call);
   const symbol = useStore((s) => s.config.currencySymbol);
+  const [bidding, setBidding] = useState(false);
 
   if (!auction || !me) {
     return (
@@ -25,7 +30,7 @@ export function AuctionScreen() {
         <div className="panel panel--pad">
           <div className="eyebrow">Premium</div>
           <h2 className="screen__title">Auction starting shortly</h2>
-          <p className="muted">Raise your paddle when the auctioneer calls your price.</p>
+          <p className="muted">The bidding button appears here the moment it opens.</p>
         </div>
       </div>
     );
@@ -35,8 +40,23 @@ export function AuctionScreen() {
   const leader = auction.auction.currentLeaderTeamId;
   const iAmLeading = leader === me.teamId;
   const myBid = me.myHighestBid;
-  const canAfford = me.maxBid >= auction.nextBid;
+  const nextBid = auction.nextBid;
+  const canAfford = me.maxBid >= nextBid;
   const closed = auction.auction.status === 'closed';
+  const canBid = !closed && !iAmLeading && canAfford;
+
+  async function placeBid() {
+    if (!canBid || bidding) return;
+    setBidding(true);
+    try {
+      // No amount: the server bids exactly the next call for this team.
+      await call('PLACE_BID', {});
+    } catch {
+      /* a rejection arrives as its own toast from the server */
+    } finally {
+      setBidding(false);
+    }
+  }
 
   const status = closed
     ? iAmLeading
@@ -47,7 +67,7 @@ export function AuctionScreen() {
       : myBid !== null
         ? 'YOU ARE IN THE AUCTION'
         : canAfford
-          ? 'RAISE YOUR PADDLE TO BID'
+          ? 'TAP TO ENTER THE BIDDING'
           : 'YOU CANNOT REACH THE NEXT BID';
 
   const statusKind = closed
@@ -85,7 +105,7 @@ export function AuctionScreen() {
           />
           {!closed ? (
             <span className="auction__next">
-              Next call <strong className="num">{money(auction.nextBid, symbol)}</strong>
+              Next call <strong className="num">{money(nextBid, symbol)}</strong>
             </span>
           ) : null}
         </div>
@@ -102,6 +122,35 @@ export function AuctionScreen() {
             {status}
           </motion.div>
         </AnimatePresence>
+
+        {/* --- the bid button: the whole point of the screen --------------- */}
+        {!closed ? (
+          <motion.button
+            type="button"
+            className="auction__bid-btn"
+            data-state={iAmLeading ? 'leading' : canAfford ? 'ready' : 'blocked'}
+            onClick={placeBid}
+            disabled={!canBid || bidding}
+            whileTap={canBid ? { scale: 0.97 } : undefined}
+          >
+            <span aria-hidden="true" className="auction__bid-btn-icon">
+              <GavelIcon size={22} />
+            </span>
+            {iAmLeading
+              ? 'YOU ARE WINNING'
+              : !canAfford
+                ? `MAX BID ${money(me.maxBid, symbol)}`
+                : bidding
+                  ? 'BIDDING…'
+                  : `BID ${money(nextBid, symbol)}`}
+          </motion.button>
+        ) : null}
+
+        {!closed && canBid ? (
+          <p className="auction__bid-hint dim">
+            One tap raises to {money(nextBid, symbol)}. You can bid again if you are outbid.
+          </p>
+        ) : null}
 
         {auction.auction.status === 'going_once' || auction.auction.status === 'going_twice' ? (
           <motion.div
@@ -150,7 +199,7 @@ export function AuctionScreen() {
               <div className="empty-state">
                 <p className="muted">No bids yet.</p>
                 <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-                  Raise your paddle to open at {money(auction.auction.startingBid, symbol)}.
+                  Be the first to open at {money(auction.auction.startingBid, symbol)}.
                 </p>
               </div>
             ) : null}

@@ -1,7 +1,7 @@
 # CSI CLUB — CODE MARKET
 
 **Round 3 competition platform — the finale.** A live coding *market*: teams hold capital, answer
-technical questions, bid real money in live physical auctions for premium questions, and can lose it
+technical questions, bid real money in live auctions for premium questions from their own laptops, and can lose it
 all on a wrong answer. The top three teams are the winners; nobody qualifies onward. Built to run on
 a **private LAN with the internet physically disconnected**.
 
@@ -255,7 +255,7 @@ with the time it actually has left.
 ### Premium challenges
 
 ```
-Auction (physical paddles) → SOLD → winner authorised over the LAN → attempt 1
+Auction (teams bid from their laptops) → SOLD → winner authorised over the LAN → attempt 1
    ├─ correct → +bid, premium ends
    └─ wrong/timeout → −bid → RECLAIM offered to the next highest ORIGINAL bidder
          ├─ accepts → attempt 2 at THEIR OWN original bid
@@ -446,28 +446,30 @@ is lost). **Resume** returns to the previous phase.
 
 ## Auction operation
 
-Bidding is **physical**: one reusable paddle per team, no electronics. The operator only records
-what the auctioneer calls.
+Teams **bid from their own laptops**. When the auction opens, every team sees a **BID ₹X** button
+for the next call; one tap raises to it. The server validates each bid against the team's ceiling
+(`capital − reserve`) and the bidder list, the current bid and the leader update in real time on
+every laptop and on the projector.
 
 ```
 PREMIUM #04 · ALGORITHMS
+CURRENT BID  ₹700     NEXT CALL  ₹800     LEADER  T17
 
-CURRENT BID   ₹700          NEXT CALL   ₹800          LEADER   T17
-
-[T01] [T02] [T03] [T04] [T05] [T06] ...
+on each team's laptop:   [ 🔨  BID ₹800 ]      (greyed out if beyond their ceiling,
+                                                 or "YOU ARE WINNING" if they lead)
 ```
 
-- **One click on a team tile = one bid at the next call.** No typing.
-- Teams that cannot legally reach the next call are **greyed out before you click** (their ceiling
-  is `capital − reserve`, broadcast live).
-- The current leader is disabled — a team cannot bid against itself.
-- **Undo bid** removes the last accepted bid and restores the previous leader (mis-click safety).
-- Optional keyboard shortcuts: `1` going once · `2` going twice · `⌫` undo · `⇧↵` close.
-- A custom amount can be typed once and applied to the next team clicked (for a jump bid).
+- A team that cannot legally reach the next call sees the button disabled with its own **max bid**.
+- The current leader's button reads **YOU ARE WINNING** — a team cannot bid against itself.
+- A team can bid again the moment it is outbid.
+- Every bid — accepted **and rejected** — is written to the audit log with a timestamp.
 
-Every bid — accepted **and rejected** — is written to the audit log with a timestamp.
+The operator still runs the tempo from **Auction Control**: going once / going twice, and **SOLD**
+to close. Auction Control also keeps a **record-a-bid** control per team as a fallback for a team
+whose laptop has died, plus **Undo bid** for a mis-click. The operator never has to record bids in
+the normal case — the teams do it themselves.
 
-Close with **SOLD**. The projector shows the hammer, the winner is authorised over the LAN, and the
+Close with **SOLD**. The projector shows the result, the winner is authorised over the LAN, and the
 winning team's laptop shows **YOU WON** with its risk amount.
 
 Then press **Start attempt 1 of 2** in Premium Control when the room is ready.
@@ -683,8 +685,9 @@ inside the podium. See [Configuration](#configuration).
 bundled audio files — zero assets, zero downloads, fully offline. They are deliberately restrained;
 sound is never required to understand the UI, and the projector mutes itself by default.
 
-**Physical paddles are the bidding mechanism.** By design: no ESP32, no buttons, no batteries. The
-software records and displays; the room does the bidding.
+**Bidding is on the teams' own laptops.** Each team taps a BID button; the server validates every
+bid and the projector updates live. The operator keeps a record-a-bid fallback in Auction Control
+for a team whose laptop has died, so the room is never blocked.
 
 **The question pool bounds the round.** The generated sequence needs enough normal questions for
 `blocks × questionsPerBlock` and one premium per block. Raising either in Config without adding

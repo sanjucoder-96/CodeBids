@@ -227,6 +227,15 @@ export class Hub {
       case CLIENT_COMMANDS.RECLAIM_RESPONSE:
         this.engine.resolveReclaim(teamId, Boolean(data.accept));
         return undefined;
+      case CLIENT_COMMANDS.PLACE_BID:
+        // A team bids as ITSELF: the session's teamId is authoritative and a
+        // client-supplied teamId is ignored, so one team can never bid for
+        // another. The organizer keeps its own PLACE_BID as a fallback for a
+        // team whose laptop has died.
+        return this.engine.placeBid(
+          teamId,
+          data.amount === undefined ? undefined : Number(data.amount),
+        );
       default:
         throw new EngineError('unknown_command', `Unknown command ${type}`);
     }

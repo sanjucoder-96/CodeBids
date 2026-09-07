@@ -1,7 +1,7 @@
 /**
  * The premium announcement on the hall display (spec section 5).
  *
- * This is the beat between "a premium is next" and the first paddle. The room
+ * This is the beat between "a premium is next" and the first bid. The room
  * learns which premium it is, what it is about, how hard it is, how long the
  * winner gets and where the bidding opens - and nothing else. The question
  * itself stays sealed until a team has paid for it.

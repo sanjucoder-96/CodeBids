@@ -1,7 +1,7 @@
 /**
  * The premium preview (spec section 5).
  *
- * Everything the room may know before the paddles go up: which premium, its
+ * Everything the room may know before the bidding opens: which premium, its
  * domain, its difficulty, the clock and the opening bid. The question itself
  * stays sealed until a team wins it.
  */

@@ -34,11 +34,11 @@ const PHASE_COPY: Record<GamePhase, { title: string; body: string }> = {
   },
   premium_intro: {
     title: 'Premium challenge incoming',
-    body: 'The auction is about to open. Have your paddle ready.',
+    body: 'The auction is about to open. Your bid button appears the moment it does.',
   },
   auction_active: {
     title: 'Premium auction in progress',
-    body: 'Raise your paddle to bid. The live price is on the projector.',
+    body: 'Tap BID on your screen to raise. The live price is on the projector too.',
   },
   premium_authorized: {
     title: 'A team has won the premium',
