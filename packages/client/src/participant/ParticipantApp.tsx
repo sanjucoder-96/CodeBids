@@ -18,6 +18,7 @@ import { ChallengeScreen } from './ChallengeScreen.js';
 import { PremiumIntroScreen } from './PremiumIntroScreen.js';
 import { AuctionScreen } from './AuctionScreen.js';
 import { PremiumScreen } from './PremiumScreen.js';
+import { PremiumDecisionScreen } from './PremiumDecisionScreen.js';
 import { ReclaimScreen } from './ReclaimScreen.js';
 import { ResultScreen } from './ResultScreen.js';
 import { StrategyScreen } from './StrategyScreen.js';
@@ -33,6 +34,7 @@ export type Screen =
   | 'solving'
   | 'premium_intro'
   | 'auction'
+  | 'premium_decision'
   | 'premium'
   | 'reclaim'
   | 'result'
@@ -138,6 +140,7 @@ function ParticipantShell({ onLogout }: { onLogout: () => void }) {
           {screen === 'solving' ? <ChallengeScreen /> : null}
           {screen === 'premium_intro' ? <PremiumIntroScreen /> : null}
           {screen === 'auction' ? <AuctionScreen /> : null}
+          {screen === 'premium_decision' ? <PremiumDecisionScreen /> : null}
           {screen === 'premium' ? <PremiumScreen /> : null}
           {screen === 'reclaim' ? <ReclaimScreen /> : null}
           {screen === 'result' ? <ResultScreen /> : null}
@@ -188,6 +191,10 @@ export function useScreen(): Screen {
 
     case 'auction_active':
       return 'auction';
+
+    case 'premium_decision':
+      // Only the winning team decides; everyone else waits (spec 6, 7).
+      return me?.canDecidePremium ? 'premium_decision' : 'waiting';
 
     case 'premium_authorized':
       return premium?.activeTeamId === me?.teamId ? 'premium' : 'auction';

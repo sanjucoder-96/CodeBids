@@ -44,6 +44,10 @@ const PHASE_COPY: Record<GamePhase, { title: string; body: string }> = {
     title: 'A team has won the premium',
     body: 'Watch the projector.',
   },
+  premium_decision: {
+    title: 'The winner is deciding',
+    body: 'They have a few seconds to take the question or sit out. Watch the projector.',
+  },
   premium_solving: {
     title: 'The premium is being attempted',
     body: 'Another team won this one. Watch the projector.',

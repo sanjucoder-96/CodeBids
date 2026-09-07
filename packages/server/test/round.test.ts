@@ -155,7 +155,7 @@ describe('state machine (spec 19)', () => {
     expect(intro?.question.timeLimit).toBeGreaterThan(0);
   });
 
-  it('walks premium_intro -> auction_active -> premium_authorized -> premium_solving', () => {
+  it('walks premium_intro -> auction_active -> premium_decision -> premium_solving', () => {
     startRound(h);
     const slot = advanceTo(h, (s) => s.kind === 'premium');
     expect(h.engine.gameState().phase).toBe('premium_intro');
@@ -165,9 +165,11 @@ describe('state machine (spec 19)', () => {
 
     h.engine.placeBid('T01');
     h.engine.closeAuction();
-    expect(h.engine.gameState().phase).toBe('premium_authorized');
+    // A win opens the 15-second TAKE / SIT-OUT window (spec 6, 7).
+    expect(h.engine.gameState().phase).toBe('premium_decision');
 
-    h.engine.startPremiumAttempt();
+    // Taking it starts the attempt from one authoritative moment.
+    h.engine.submitPremiumDecision('T01', true);
     expect(h.engine.gameState().phase).toBe('premium_solving');
     void slot;
   });
@@ -201,7 +203,7 @@ describe('premium preview hides the question (spec 5)', () => {
     advanceTo(h, (s) => s.kind === 'premium');
 
     const intro = h.lastEvent<{ preview: Record<string, unknown> }>('PREMIUM_INTRO');
-    expect(intro?.preview).toMatchObject({ startingBid: 300, increment: 100 });
+    expect(intro?.preview).toMatchObject({ startingBid: 200, increment: 1 });
     expect(intro?.preview.domain).toBeTruthy();
     expect(intro?.preview.difficulty).toBeTruthy();
     expect(intro?.preview.timeLimit).toBeGreaterThan(0);
@@ -221,7 +223,7 @@ describe('premium preview hides the question (spec 5)', () => {
     }
     const preview = h.engine.currentPremiumPreview();
     expect(preview?.isFinalPremium).toBe(true);
-    expect(preview?.startingBid).toBe(500);
+    expect(preview?.startingBid).toBe(200);
   });
 
   it('never leaks the premium body to a non-winner snapshot', () => {
@@ -467,9 +469,9 @@ describe('question flow', () => {
   it('rewards a correct answer by difficulty', async () => {
     startRound(h);
     const { question } = openFirstQuestion(h);
-    const expected = { easy: 200, medium: 300, hard: 400, very_hard: 500 }[question.difficulty];
+    const expected = { easy: 100, medium: 150, hard: 200, very_hard: 300 }[question.difficulty];
     await play(h, 'T01', question, true);
-    expect(capital(h, 'T01')).toBe(1000 + expected);
+    expect(capital(h, 'T01')).toBe(1500 + expected);
   });
 
   it('penalises a wrong answer by difficulty', async () => {
@@ -477,7 +479,7 @@ describe('question flow', () => {
     const { question } = openFirstQuestion(h);
     const expected = { easy: 100, medium: 150, hard: 200, very_hard: 250 }[question.difficulty];
     await play(h, 'T02', question, false);
-    expect(capital(h, 'T02')).toBe(1000 - expected);
+    expect(capital(h, 'T02')).toBe(1500 - expected);
   });
 
   it('rejects the wrong access key', () => {

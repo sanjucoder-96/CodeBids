@@ -121,7 +121,9 @@ CREATE TABLE IF NOT EXISTS premium_states (
   offer_deadline  INTEGER,
   failed_team_id  TEXT,
   outcome         TEXT,
-  window_ends_at  INTEGER
+  window_ends_at  INTEGER,
+  decision_deadline INTEGER,
+  decisions       TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS attempts (

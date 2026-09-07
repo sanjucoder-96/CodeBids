@@ -227,6 +227,11 @@ export class Hub {
       case CLIENT_COMMANDS.RECLAIM_RESPONSE:
         this.engine.resolveReclaim(teamId, Boolean(data.accept));
         return undefined;
+      case CLIENT_COMMANDS.PREMIUM_DECISION:
+        // TAKE / SIT-OUT for the premium winner (spec sections 6, 7). The
+        // session's team is authoritative; a forged teamId is ignored.
+        this.engine.submitPremiumDecision(teamId, Boolean(data.take));
+        return undefined;
       case CLIENT_COMMANDS.PLACE_BID:
         // A team bids as ITSELF: the session's teamId is authoritative and a
         // client-supplied teamId is ignored, so one team can never bid for

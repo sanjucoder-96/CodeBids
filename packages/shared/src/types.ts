@@ -276,6 +276,7 @@ export type PremiumStage =
   | 'intro'
   | 'auction'
   | 'sold'
+  | 'decision'
   | 'attempt_1'
   | 'reclaim_offer'
   | 'attempt_2'
@@ -305,7 +306,17 @@ export interface PremiumState {
   outcome: PremiumOutcome;
   /** Wall-clock end of the whole 7-minute premium window. */
   windowEndsAt: number | null;
+  /**
+   * The 15-second TAKE / SIT-OUT window after a premium is won (spec 6, 7).
+   * `decisionDeadline` is the authoritative deadline every client counts down
+   * to; `decisions` records each eligible team's choice. A team that never
+   * chooses defaults to sitting out when the deadline passes.
+   */
+  decisionDeadline: number | null;
+  decisions: Record<string, PremiumDecision>;
 }
+
+export type PremiumDecision = 'take' | 'sit_out';
 
 /* ------------------------------------------------------------------ *
  * Game state machine
@@ -319,6 +330,7 @@ export type GamePhase =
   | 'premium_intro'
   | 'auction_active'
   | 'premium_authorized'
+  | 'premium_decision'
   | 'premium_solving'
   | 'premium_result'
   | 'reclaim'
@@ -335,6 +347,7 @@ export const PHASE_LABELS: Record<GamePhase, string> = {
   premium_intro: 'Premium incoming',
   auction_active: 'Auction',
   premium_authorized: 'Winner authorised',
+  premium_decision: 'Take or sit out',
   premium_solving: 'Premium attempt',
   premium_result: 'Premium result',
   reclaim: 'Reclaim',
@@ -448,6 +461,15 @@ export interface TeamView {
   questionDeadline: number | null;
   premiumUnlocked: boolean;
   premiumRisk: number | null;
+  /**
+   * The 15-second TAKE / SIT-OUT decision (spec 6, 7), for the team that won
+   * the premium. `canDecidePremium` gates the buttons; `premiumDecisionDeadline`
+   * is the authoritative countdown target; `premiumDecision` is this team's own
+   * recorded choice, or null until it chooses.
+   */
+  canDecidePremium: boolean;
+  premiumDecisionDeadline: number | null;
+  premiumDecision: PremiumDecision | null;
   lastResult: {
     questionId: string;
     result: AttemptResult;

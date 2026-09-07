@@ -274,11 +274,11 @@ describe('a full block over the LAN', () => {
         .call('SUBMIT_ANSWER', { questionId: question.id, submission: answerFor(question, false) });
     }
 
-    const reward = { easy: 200, medium: 300, hard: 400, very_hard: 500 }[question.difficulty];
+    const reward = { easy: 100, medium: 150, hard: 200, very_hard: 300 }[question.difficulty];
     const penalty = { easy: 100, medium: 150, hard: 200, very_hard: 250 }[question.difficulty];
-    expect(app.repo.getTeam('T01')?.capital).toBe(1000 + reward);
-    expect(app.repo.getTeam('T05')?.capital).toBe(1000 - penalty);
-    expect(app.repo.getTeam('T07')?.capital).toBe(1000);
+    expect(app.repo.getTeam('T01')?.capital).toBe(1500 + reward);
+    expect(app.repo.getTeam('T05')?.capital).toBe(1500 - penalty);
+    expect(app.repo.getTeam('T07')?.capital).toBe(1500);
 
     await organizer.call('CLOSE_QUESTION', {});
   }, 30_000);
@@ -319,22 +319,24 @@ describe('premium over the LAN', () => {
 
     const intro = await projector.wait((f) => f.t === 'PREMIUM_INTRO');
     const preview = (intro.d as { preview: Record<string, unknown> }).preview;
-    expect(preview.startingBid).toBe(300);
+    expect(preview.startingBid).toBe(200);
     expect(preview.domain).toBeTruthy();
     expect(preview.difficulty).toBeTruthy();
     expect(JSON.stringify(intro)).not.toContain('prompt');
   }, 30_000);
 
   it('runs the auction and authorises exactly one team', async () => {
-    for (const id of ['T01', 'T02', 'T03']) {
-      await organizer.call('ADJUST_CAPITAL', { teamId: id, amount: 900, reason: 'headroom' });
-    }
+    // Drain T08 so its purse cannot reach the bidding (full-purse eligibility).
+    await organizer.call('ADJUST_CAPITAL', { teamId: 'T08', amount: -1400, reason: 'drain' });
     await organizer.call('START_AUCTION', {});
-    await organizer.call('PLACE_BID', { teamId: 'T03' });
-    await organizer.call('PLACE_BID', { teamId: 'T02' });
-    await organizer.call('PLACE_BID', { teamId: 'T01' });
+    // Teams enter their own amounts; highest wins.
+    await organizer.call('PLACE_BID', { teamId: 'T03', amount: 300 });
+    await organizer.call('PLACE_BID', { teamId: 'T02', amount: 400 });
+    await organizer.call('PLACE_BID', { teamId: 'T01', amount: 500 });
 
-    const poor = (await organizer.call('PLACE_BID', { teamId: 'T08' })) as { accepted: boolean };
+    const poor = (await organizer.call('PLACE_BID', { teamId: 'T08', amount: 600 })) as {
+      accepted: boolean;
+    };
     expect(poor.accepted).toBe(false);
 
     projector.clear();
@@ -346,14 +348,22 @@ describe('premium over the LAN', () => {
       teamId: 'T01',
       amount: 500,
     });
-    expect((await winner.wait((f) => f.t === 'QUESTION_UNLOCKED')).d).toMatchObject({ risk: 500 });
+    expect((await winner.wait((f) => f.t === 'PREMIUM_UNLOCKED')).d).toMatchObject({
+      teamId: 'T01',
+      risk: 500,
+    });
+    // And the winner is invited to TAKE or SIT OUT (spec 6, 7).
+    expect((await winner.wait((f) => f.t === 'PREMIUM_DECISION_WINDOW')).d).toMatchObject({
+      eligibleTeamIds: ['T01'],
+    });
   }, 30_000);
 
   it('reveals the premium body only to the winner, then settles the reclaim', async () => {
     const question = currentQuestion();
     const winner = players.get('T01')!;
     winner.clear();
-    await organizer.call('START_PREMIUM_ATTEMPT', {});
+    // The winner TAKES the premium; taking starts the attempt (spec 6, 7).
+    await winner.call('PREMIUM_DECISION', { take: true });
 
     const revealed = await winner.wait(
       (f) => f.t === 'QUESTION_OPENED' && (f.d as { question: { revealed: boolean } }).question.revealed,
@@ -480,6 +490,11 @@ describe('finale (spec 2, 11, 18)', () => {
   }, 30_000);
 
   it('completes the round and produces a top three', async () => {
+    // Separate the top three cleanly, whatever earlier play left behind.
+    await organizer.call('ADJUST_CAPITAL', { teamId: 'T02', amount: 9000, reason: 'podium 1' });
+    await organizer.call('ADJUST_CAPITAL', { teamId: 'T03', amount: 6000, reason: 'podium 2' });
+    await organizer.call('ADJUST_CAPITAL', { teamId: 'T04', amount: 3000, reason: 'podium 3' });
+
     const podium = (await organizer.call('COMPLETE_GAME', {})) as {
       place: number;
       teamId: string;
@@ -554,19 +569,19 @@ describe('leaderboard broadcasts reach every audience', () => {
       reason: 'broadcast probe',
     });
 
-    const isBoard = (f: Envelope) => f.t === 'LEADERBOARD_UPDATED';
-    await Promise.all([organizer.wait(isBoard), projector.wait(isBoard), team.wait(isBoard)]);
+    // Every audience must receive a board that reflects the change - not just
+    // any board frame, since rapid updates are coalesced.
+    const showsT06 = (value: number) => (f: Envelope) =>
+      f.t === 'LEADERBOARD_UPDATED' &&
+      (f.d as { rows: { teamId: string; capital: number }[] }).rows.find(
+        (r) => r.teamId === 'T06',
+      )?.capital === value;
 
-    for (const [label, client] of [
-      ['organizer', organizer],
-      ['projector', projector],
-      ['team', team],
-    ] as [string, Client][]) {
-      const board = client.frames.filter(isBoard).at(-1);
-      const rows = (board?.d as { rows: { teamId: string; capital: number }[] }).rows;
-      const row = rows.find((r) => r.teamId === 'T06');
-      expect(row?.capital, `${label} saw a stale board`).toBe(before + 25);
-    }
+    await Promise.all([
+      organizer.wait(showsT06(before + 25)),
+      projector.wait(showsT06(before + 25)),
+      team.wait(showsT06(before + 25)),
+    ]);
   });
 
   it('coalesces a burst without dropping any audience', async () => {

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { money } from '../lib/format.js';
+import { Countdown } from '../ui/Countdown.js';
 
 export function PremiumControl() {
   const premium = useStore((s) => s.premium);
@@ -36,6 +37,8 @@ export function PremiumControl() {
   const attempting = premium.stage === 'attempt_1' || premium.stage === 'attempt_2';
   const canStart = premium.stage === 'sold' && premium.activeTeamId !== null;
   const offering = premium.stage === 'reclaim_offer';
+  const deciding = premium.stage === 'decision';
+  const winnerDecision = premium.activeTeamId ? premium.decisions[premium.activeTeamId] : undefined;
 
   return (
     <section className="panel panel--flush panel--premium">
@@ -60,6 +63,34 @@ export function PremiumControl() {
               <span className="label">Risk</span>
               <div className="prem-active__risk num">{money(premium.activeRisk ?? 0, symbol)}</div>
             </div>
+          </div>
+        ) : null}
+
+        {deciding ? (
+          <div className="prem-decide">
+            <div className="row-between">
+              <span className="label">Take / sit-out window</span>
+              {premium.decisionDeadline ? (
+                <Countdown
+                  endsAt={premium.decisionDeadline}
+                  duration={config.takeDecisionSeconds}
+                  label="Deciding"
+                  size="sm"
+                />
+              ) : null}
+            </div>
+            <div className="prem-decide__status" data-choice={winnerDecision ?? 'pending'}>
+              <span className="mono">{premium.activeTeamId}</span>{' '}
+              {winnerDecision === 'take'
+                ? 'chose to TAKE the question'
+                : winnerDecision === 'sit_out'
+                  ? 'chose to SIT OUT'
+                  : 'is deciding…'}
+            </div>
+            <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
+              The question starts automatically when the winner takes it or the timer ends. No
+              response counts as sitting out.
+            </p>
           </div>
         ) : null}
 

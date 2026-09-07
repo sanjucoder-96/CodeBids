@@ -1,14 +1,15 @@
 /**
- * The participant view of a live auction.
+ * The participant view of a live premium auction (spec sections 2-5).
  *
- * Teams bid from their own laptop: one tap raises to the next call, the server
- * validates it against the team's ceiling (capital - reserve), and every
+ * Each team enters its bid AMOUNT on its own laptop and submits it. The server
+ * is the authority: it validates the minimum (₹200), the team's purse, and the
+ * receipt order that breaks ties (first valid bid at a price wins). Every
  * surface — this screen, the other teams' screens and the projector — updates
- * in real time. The organizer can still record a bid on a team's behalf if a
- * laptop has died, so the room is never blocked.
+ * in real time. The organizer can still record a bid for a team whose laptop
+ * has died, so the room is never blocked.
  */
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { RollingNumber } from '../ui/AnimatedNumber.js';
@@ -22,7 +23,9 @@ export function AuctionScreen() {
   const teams = useStore((s) => s.teams);
   const call = useStore((s) => s.call);
   const symbol = useStore((s) => s.config.currencySymbol);
+  const [bidText, setBidText] = useState('');
   const [bidding, setBidding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!auction || !me) {
     return (
@@ -30,7 +33,7 @@ export function AuctionScreen() {
         <div className="panel panel--pad">
           <div className="eyebrow">Premium</div>
           <h2 className="screen__title">Auction starting shortly</h2>
-          <p className="muted">The bidding button appears here the moment it opens.</p>
+          <p className="muted">Your bid box appears here the moment it opens.</p>
         </div>
       </div>
     );
@@ -40,19 +43,42 @@ export function AuctionScreen() {
   const leader = auction.auction.currentLeaderTeamId;
   const iAmLeading = leader === me.teamId;
   const myBid = me.myHighestBid;
-  const nextBid = auction.nextBid;
-  const canAfford = me.maxBid >= nextBid;
   const closed = auction.auction.status === 'closed';
-  const canBid = !closed && !iAmLeading && canAfford;
 
-  async function placeBid() {
-    if (!canBid || bidding) return;
+  const startingBid = auction.auction.startingBid;
+  const currentBid = auction.auction.currentBid;
+  const purse = me.capital;
+  /** The lowest amount the server will accept right now. */
+  const minAcceptable = currentBid === null ? startingBid : currentBid + 1;
+  const canReach = purse >= minAcceptable;
+
+  const parsed = /^\d+$/.test(bidText.trim()) ? Number.parseInt(bidText.trim(), 10) : null;
+  const localReason =
+    parsed === null
+      ? null
+      : parsed < minAcceptable
+        ? `Bid at least ${money(minAcceptable, symbol)}`
+        : parsed > purse
+          ? `That is more than your purse of ${money(purse, symbol)}`
+          : null;
+  const canSubmit = !closed && !iAmLeading && parsed !== null && localReason === null && !bidding;
+
+  async function submitBid(event: FormEvent) {
+    event.preventDefault();
+    if (parsed === null || bidding) return;
     setBidding(true);
+    setError(null);
     try {
-      // No amount: the server bids exactly the next call for this team.
-      await call('PLACE_BID', {});
-    } catch {
-      /* a rejection arrives as its own toast from the server */
+      const result = (await call('PLACE_BID', { amount: parsed })) as
+        | { accepted: boolean; message?: string }
+        | undefined;
+      if (result && result.accepted === false) {
+        setError(result.message ?? 'Bid rejected');
+      } else {
+        setBidText('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bid rejected');
     } finally {
       setBidding(false);
     }
@@ -66,9 +92,9 @@ export function AuctionScreen() {
       ? 'YOU HOLD THE HIGHEST BID'
       : myBid !== null
         ? 'YOU ARE IN THE AUCTION'
-        : canAfford
-          ? 'TAP TO ENTER THE BIDDING'
-          : 'YOU CANNOT REACH THE NEXT BID';
+        : canReach
+          ? 'ENTER YOUR BID'
+          : 'YOUR PURSE CANNOT REACH THE NEXT BID';
 
   const statusKind = closed
     ? iAmLeading
@@ -76,7 +102,7 @@ export function AuctionScreen() {
       : 'neutral'
     : iAmLeading
       ? 'gain'
-      : canAfford
+      : canReach
         ? 'accent'
         : 'loss';
 
@@ -103,11 +129,23 @@ export function AuctionScreen() {
             value={auction.auction.currentBid ?? 0}
             format={(n) => (auction.auction.currentBid === null ? '—' : money(n, symbol))}
           />
-          {!closed ? (
+          {currentBid !== null && auction.auction.currentLeaderTeamId ? (
             <span className="auction__next">
-              Next call <strong className="num">{money(nextBid, symbol)}</strong>
+              held by <strong>{auction.auction.currentLeaderTeamId}</strong>
             </span>
           ) : null}
+        </div>
+
+        {/* Two numbers a team needs before it bids (spec sections 2, 9). */}
+        <div className="auction__facts">
+          <div className="auction__fact">
+            <span className="auction__fact-label">Minimum bid</span>
+            <span className="auction__fact-value num">{money(startingBid, symbol)}</span>
+          </div>
+          <div className="auction__fact" data-accent="true">
+            <span className="auction__fact-label">Your purse</span>
+            <span className="auction__fact-value num">{money(purse, symbol)}</span>
+          </div>
         </div>
 
         <AnimatePresence mode="wait">
@@ -123,33 +161,55 @@ export function AuctionScreen() {
           </motion.div>
         </AnimatePresence>
 
-        {/* --- the bid button: the whole point of the screen --------------- */}
-        {!closed ? (
-          <motion.button
-            type="button"
-            className="auction__bid-btn"
-            data-state={iAmLeading ? 'leading' : canAfford ? 'ready' : 'blocked'}
-            onClick={placeBid}
-            disabled={!canBid || bidding}
-            whileTap={canBid ? { scale: 0.97 } : undefined}
-          >
-            <span aria-hidden="true" className="auction__bid-btn-icon">
-              <GavelIcon size={22} />
-            </span>
-            {iAmLeading
-              ? 'YOU ARE WINNING'
-              : !canAfford
-                ? `MAX BID ${money(me.maxBid, symbol)}`
-                : bidding
-                  ? 'BIDDING…'
-                  : `BID ${money(nextBid, symbol)}`}
-          </motion.button>
-        ) : null}
-
-        {!closed && canBid ? (
-          <p className="auction__bid-hint dim">
-            One tap raises to {money(nextBid, symbol)}. You can bid again if you are outbid.
-          </p>
+        {/* --- the bid box: each team enters its own amount (spec 3) -------- */}
+        {!closed && !iAmLeading ? (
+          <form className="auction__bidform" onSubmit={submitBid}>
+            <div className="auction__bidform-row">
+              <span className="auction__bidform-prefix">{symbol}</span>
+              <input
+                className="input auction__bidinput num"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={bidText}
+                onChange={(event) => {
+                  setBidText(event.target.value.replace(/[^\d]/g, ''));
+                  setError(null);
+                }}
+                placeholder={String(minAcceptable)}
+                aria-label="Your bid amount"
+                disabled={!canReach}
+              />
+              <motion.button
+                type="submit"
+                className="btn btn--premium btn--lg auction__bidsubmit"
+                disabled={!canSubmit}
+                whileTap={canSubmit ? { scale: 0.97 } : undefined}
+              >
+                <span aria-hidden="true" style={{ verticalAlign: '-4px', marginRight: 6 }}>
+                  <GavelIcon size={18} />
+                </span>
+                {bidding ? 'BIDDING…' : 'BID'}
+              </motion.button>
+            </div>
+            {error ?? localReason ? (
+              <motion.p
+                className="auction__bid-error"
+                role="alert"
+                initial={{ x: 0 }}
+                animate={{ x: [0, -6, 6, -3, 0] }}
+                transition={{ duration: 0.3 }}
+              >
+                {error ?? localReason}
+              </motion.p>
+            ) : (
+              <p className="auction__bid-hint dim">
+                {canReach
+                  ? `Enter at least ${money(minAcceptable, symbol)}. Highest bid wins.`
+                  : `Your purse is ${money(purse, symbol)} — below the next bid.`}
+              </p>
+            )}
+          </form>
         ) : null}
 
         {auction.auction.status === 'going_once' || auction.auction.status === 'going_twice' ? (
@@ -199,7 +259,7 @@ export function AuctionScreen() {
               <div className="empty-state">
                 <p className="muted">No bids yet.</p>
                 <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-                  Be the first to open at {money(auction.auction.startingBid, symbol)}.
+                  Be the first to open at {money(startingBid, symbol)}.
                 </p>
               </div>
             ) : null}
@@ -210,8 +270,8 @@ export function AuctionScreen() {
           <span className="panel__title">Your position</span>
           <div className="auction__you-grid">
             <Metric label="Your team" value={me.teamId} />
-            <Metric label="Your capital" value={money(me.capital, symbol)} />
-            <Metric label="Your max bid" value={money(me.maxBid, symbol)} accent />
+            <Metric label="Your purse" value={money(me.capital, symbol)} accent />
+            <Metric label="Minimum bid" value={money(startingBid, symbol)} />
             <Metric label="Your highest bid" value={myBid === null ? '—' : money(myBid, symbol)} />
           </div>
 

@@ -35,29 +35,39 @@ beforeEach(() => {
 afterEach(() => h.close());
 
 describe('auction mechanics (spec 7, 9)', () => {
-  it('opens at the configured bid and climbs by the increment', () => {
+  it('opens at the ₹200 minimum and accepts higher free-form bids', () => {
     openPremium();
     const view = h.engine.startAuction();
-    expect(view.auction.startingBid).toBe(300);
-    expect(view.nextBid).toBe(300);
+    expect(view.auction.startingBid).toBe(200);
+    expect(view.nextBid).toBe(200);
 
-    h.engine.placeBid('T01');
-    expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(300);
-    h.engine.placeBid('T02');
-    expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(400);
+    // A team enters its own amount; it must be at least the minimum.
+    expect(h.engine.placeBid('T01', 200).accepted).toBe(true);
+    expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(200);
+    // The next team must beat the current bid by any amount.
+    expect(h.engine.placeBid('T02', 350).accepted).toBe(true);
+    expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(350);
   });
 
-  it('enforces the protected reserve server-side', () => {
+  it('rejects an opening bid below the ₹200 minimum', () => {
+    openPremium();
+    h.engine.startAuction();
+    const low = h.engine.placeBid('T01', 199);
+    expect(low.accepted).toBe(false);
+    expect(low.message).toMatch(/at least 200/);
+  });
+
+  it('lets a team bid up to its whole purse, and no further (spec 4)', () => {
     startRound(h, 6);
     advanceTo(h, (s) => s.kind === 'premium');
     h.engine.startAuction();
-    // T01 has 1000 capital, 500 reserve -> ceiling 500.
-    expect(h.engine.placeBid('T01', 300).accepted).toBe(true);
-    expect(h.engine.placeBid('T02', 400).accepted).toBe(true);
-    expect(h.engine.placeBid('T01', 500).accepted).toBe(true);
-    const over = h.engine.placeBid('T02', 600);
+    // Every team starts on ₹1,500 with no protected reserve: the ceiling is
+    // the full purse. ₹1,500 is valid, ₹1,501 is not.
+    expect(h.engine.placeBid('T01', 1400).accepted).toBe(true);
+    expect(h.engine.placeBid('T02', 1500).accepted).toBe(true);
+    const over = h.engine.placeBid('T01', 1501);
     expect(over.accepted).toBe(false);
-    expect(over.message).toMatch(/max bid of 500/);
+    expect(over.message).toMatch(/1500/);
   });
 
   it('lets a richer team bid higher', () => {
@@ -89,8 +99,8 @@ describe('auction mechanics (spec 7, 9)', () => {
   it('undoes an operator mis-click', () => {
     openPremium();
     h.engine.startAuction();
-    h.engine.placeBid('T01');
-    h.engine.placeBid('T02');
+    h.engine.placeBid('T01', 300);
+    h.engine.placeBid('T02', 400);
     h.engine.undoBid();
     const view = h.engine.currentAuctionView();
     expect(view?.auction.currentBid).toBe(300);
@@ -100,20 +110,20 @@ describe('auction mechanics (spec 7, 9)', () => {
   it('supports going once / going twice and reopening', () => {
     openPremium();
     h.engine.startAuction();
-    h.engine.placeBid('T01');
+    h.engine.placeBid('T01', 300);
     h.engine.callAuction('once');
     expect(h.engine.currentAuctionView()?.auction.status).toBe('going_once');
     h.engine.callAuction('twice');
     expect(h.engine.currentAuctionView()?.auction.status).toBe('going_twice');
-    h.engine.placeBid('T02');
+    h.engine.placeBid('T02', 400);
     expect(h.engine.currentAuctionView()?.auction.status).toBe('open');
   });
 
   it('authorises exactly one team when the hammer falls', () => {
     openPremium();
     h.engine.startAuction();
-    h.engine.placeBid('T05');
-    h.engine.placeBid('T06');
+    h.engine.placeBid('T05', 300);
+    h.engine.placeBid('T06', 400);
     h.clearEvents();
     h.engine.closeAuction();
 

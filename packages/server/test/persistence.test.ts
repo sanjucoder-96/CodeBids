@@ -222,7 +222,7 @@ describe('restart recovery', () => {
 
     expect(existsSync(target)).toBe(true);
     const restored = boot(target);
-    expect(restored.repo.getTeam('T01')?.capital).toBe(1500);
+    expect(restored.repo.getTeam('T01')?.capital).toBe(2000);
     restored.close();
   });
 });
@@ -246,7 +246,7 @@ describe('reset', () => {
     h.engine.resetGame(true);
 
     expect(h.repo.listTeams()).toHaveLength(3);
-    expect(h.repo.getTeam('T01')?.capital).toBe(1000);
+    expect(h.repo.getTeam('T01')?.capital).toBe(1500);
     expect(h.repo.listAttempts()).toHaveLength(0);
     expect(h.repo.listSequence()).toHaveLength(0);
     expect(h.engine.gameState().phase).toBe('idle');

@@ -26,6 +26,7 @@ import type {
   LiveEvent,
   PodiumEntry,
   PremiumState,
+  PremiumDecision,
   QuestionPublic,
   SequenceEntry,
   SubmissionValue,
@@ -180,6 +181,8 @@ export const SERVER_EVENTS = {
   AUCTION_CANCELLED: 'AUCTION_CANCELLED',
 
   PREMIUM_UNLOCKED: 'PREMIUM_UNLOCKED',
+  PREMIUM_DECISION_WINDOW: 'PREMIUM_DECISION_WINDOW',
+  PREMIUM_DECISION_MADE: 'PREMIUM_DECISION_MADE',
   PREMIUM_ATTEMPT_STARTED: 'PREMIUM_ATTEMPT_STARTED',
   PREMIUM_ATTEMPT_FAILED: 'PREMIUM_ATTEMPT_FAILED',
   PREMIUM_RECLAIM_OFFERED: 'PREMIUM_RECLAIM_OFFERED',
@@ -247,6 +250,12 @@ export interface ServerPayloads {
   AUCTION_CANCELLED: { auctionId: number };
 
   PREMIUM_UNLOCKED: { premium: PremiumState; teamId: string; risk: number };
+  PREMIUM_DECISION_WINDOW: {
+    premium: PremiumState;
+    deadline: number;
+    eligibleTeamIds: string[];
+  };
+  PREMIUM_DECISION_MADE: { premium: PremiumState; teamId: string; decision: PremiumDecision };
   PREMIUM_ATTEMPT_STARTED: {
     premium: PremiumState;
     teamId: string;
@@ -311,6 +320,7 @@ export const CLIENT_COMMANDS = {
   SKIP_QUESTION: 'SKIP_QUESTION',
   SUBMIT_ANSWER: 'SUBMIT_ANSWER',
   RECLAIM_RESPONSE: 'RECLAIM_RESPONSE',
+  PREMIUM_DECISION: 'PREMIUM_DECISION',
 
   // organizer - game flow
   START_GAME: 'START_GAME',

@@ -118,6 +118,8 @@ interface PremiumRow {
   failed_team_id: string | null;
   outcome: string | null;
   window_ends_at: number | null;
+  decision_deadline: number | null;
+  decisions: string;
 }
 
 /* ------------------------------------------------------------------ *
@@ -631,6 +633,8 @@ export class Repo {
       failedTeamId: row.failed_team_id,
       outcome: row.outcome as PremiumState['outcome'],
       windowEndsAt: row.window_ends_at,
+      decisionDeadline: row.decision_deadline,
+      decisions: JSON.parse(row.decisions ?? '{}') as PremiumState['decisions'],
     };
   }
 
@@ -640,8 +644,8 @@ export class Repo {
         `INSERT INTO premium_states
           (question_id, slot_index, stage, auction_id, ladder, active_team_id, active_risk,
            attempt_number, offer_team_id, offer_risk, offer_deadline, failed_team_id, outcome,
-           window_ends_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           window_ends_at, decision_deadline, decisions)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(question_id) DO UPDATE SET
            slot_index = excluded.slot_index, stage = excluded.stage,
            auction_id = excluded.auction_id, ladder = excluded.ladder,
@@ -649,7 +653,8 @@ export class Repo {
            attempt_number = excluded.attempt_number, offer_team_id = excluded.offer_team_id,
            offer_risk = excluded.offer_risk, offer_deadline = excluded.offer_deadline,
            failed_team_id = excluded.failed_team_id, outcome = excluded.outcome,
-           window_ends_at = excluded.window_ends_at`,
+           window_ends_at = excluded.window_ends_at,
+           decision_deadline = excluded.decision_deadline, decisions = excluded.decisions`,
       )
       .run(
         state.questionId,
@@ -666,6 +671,8 @@ export class Repo {
         state.failedTeamId,
         state.outcome,
         state.windowEndsAt,
+        state.decisionDeadline,
+        JSON.stringify(state.decisions ?? {}),
       );
   }
 

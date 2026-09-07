@@ -52,6 +52,9 @@ export function ProjectorAuction() {
           {domainLabel(auction.preview.domain)} · {difficultyLabel(auction.preview.difficulty)} ·{' '}
           {auction.preview.timeLimit}s
         </div>
+        <div className="pj-auction__minbid">
+          MINIMUM BID {money(auction.auction.startingBid, symbol)}
+        </div>
       </header>
 
       <div className="pj-auction__bid">
@@ -66,7 +69,11 @@ export function ProjectorAuction() {
           }
         />
         <div className="pj-auction__next">
-          {auction.auction.currentBid === null ? 'OPENING BID' : `NEXT ${money(auction.nextBid, symbol)}`}
+          {auction.auction.currentBid === null
+            ? `TEAMS BID FROM ${money(auction.auction.startingBid, symbol)}`
+            : auction.auction.currentLeaderTeamId
+              ? `LEADER ${auction.auction.currentLeaderTeamId}`
+              : 'HIGHEST BID WINS'}
         </div>
       </div>
 

@@ -15,6 +15,7 @@ import { ProjectorQuestion } from './ProjectorQuestion.js';
 import { ProjectorPremiumIntro } from './ProjectorPremiumIntro.js';
 import { ProjectorAuction } from './ProjectorAuction.js';
 import { ProjectorReclaim } from './ProjectorReclaim.js';
+import { ProjectorDecision } from './ProjectorDecision.js';
 import { ProjectorStrategy } from './ProjectorStrategy.js';
 import { ProjectorFinalStretch } from './ProjectorFinalStretch.js';
 import { ProjectorPodium } from './ProjectorPodium.js';
@@ -26,6 +27,7 @@ type View =
   | 'question'
   | 'premium_intro'
   | 'auction'
+  | 'decision'
   | 'reclaim'
   | 'strategy'
   | 'final_stretch'
@@ -109,6 +111,7 @@ function ProjectorStage() {
         {view === 'question' ? <ProjectorQuestion /> : null}
         {view === 'premium_intro' ? <ProjectorPremiumIntro /> : null}
         {view === 'auction' ? <ProjectorAuction /> : null}
+        {view === 'decision' ? <ProjectorDecision /> : null}
         {view === 'reclaim' ? <ProjectorReclaim /> : null}
         {view === 'strategy' ? <ProjectorStrategy /> : null}
         {view === 'final_stretch' ? <ProjectorFinalStretch /> : null}
@@ -148,6 +151,11 @@ export function useProjectorView(): View {
       return 'premium_intro';
 
     case 'auction_active':
+      return 'auction';
+
+    case 'premium_decision':
+      return 'decision';
+
     case 'premium_authorized':
       return 'auction';
 

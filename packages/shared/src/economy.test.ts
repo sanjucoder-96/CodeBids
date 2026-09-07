@@ -136,10 +136,12 @@ describe('validateBid (server-authoritative, spec 8/13)', () => {
 });
 
 describe('question economy', () => {
-  it('scales reward by difficulty', () => {
-    expect(questionReward(cfg, challenge({ difficulty: 'easy' }), 1000)).toBe(200);
-    expect(questionReward(cfg, challenge({ difficulty: 'medium' }), 1000)).toBe(300);
-    expect(questionReward(cfg, challenge({ difficulty: 'hard' }), 1000)).toBe(400);
+  it('gives the spec-8 prize for each difficulty', () => {
+    // Medium 150, Hard 200, Very Hard 300; Easy 100.
+    expect(questionReward(cfg, challenge({ difficulty: 'easy' }), 1000)).toBe(100);
+    expect(questionReward(cfg, challenge({ difficulty: 'medium' }), 1000)).toBe(150);
+    expect(questionReward(cfg, challenge({ difficulty: 'hard' }), 1000)).toBe(200);
+    expect(questionReward(cfg, challenge({ difficulty: 'very_hard' }), 1000)).toBe(300);
   });
 
   it('honours a per-question override', () => {
@@ -159,13 +161,15 @@ describe('question economy', () => {
 
   it('supports a fixed mode', () => {
     const fixed = { ...cfg, questionReward: { ...cfg.questionReward, mode: 'fixed' as const } };
-    expect(questionReward(fixed, challenge({ difficulty: 'hard' }), 1000)).toBe(200);
+    // Fixed mode ignores difficulty and returns the base reward.
+    expect(questionReward(fixed, challenge({ difficulty: 'hard' }), 1000)).toBe(cfg.questionReward.base);
+    expect(questionReward(fixed, challenge({ difficulty: 'easy' }), 1000)).toBe(cfg.questionReward.base);
   });
 
   it('adds capital on a correct answer', () => {
     const r = resolveQuestion(cfg, challenge({ difficulty: 'medium' }), 1000, 'correct');
-    expect(r.delta).toBe(300);
-    expect(r.newCapital).toBe(1300);
+    expect(r.delta).toBe(150);
+    expect(r.newCapital).toBe(1150);
   });
 
   it('subtracts capital on a wrong answer', () => {

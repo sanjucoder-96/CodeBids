@@ -127,6 +127,8 @@ export function emptyPremiumState(questionId: string, slotIndex: number): Premiu
     failedTeamId: null,
     outcome: null,
     windowEndsAt: null,
+    decisionDeadline: null,
+    decisions: {},
   };
 }
 

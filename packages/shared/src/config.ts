@@ -89,6 +89,12 @@ export interface GameConfig {
   /** Seconds the reclaim candidate has to accept or decline. */
   reclaimDecisionWindow: number;
   reclaimAutoDecline: boolean;
+  /**
+   * After a premium is won, the winner has this long to TAKE the question or
+   * SIT OUT before it becomes active (spec sections 6, 7). The server owns this
+   * deadline; clients only render the countdown against it.
+   */
+  takeDecisionSeconds: number;
   /** Grace period (ms) allowed on top of a timer for network latency. */
   submissionGraceMs: number;
 
@@ -134,19 +140,21 @@ export const DEFAULT_CONFIG: GameConfig = {
   noRepeatWindow: 6,
   normalDifficulties: ['easy', 'medium', 'hard', 'very_hard'],
 
-  startingCapital: 1000,
-  protectedReserve: 500,
+  startingCapital: 1500,
+  protectedReserve: 0,
   capitalFloor: 0,
 
   questionOptIn: true,
   requireAccessKey: false,
   questionReward: {
+    // Question prizes (spec section 8): Medium 150, Hard 200, Very Hard 300.
+    // base * multiplier gives the exact rupee prize; Easy (unspecified) is 100.
     mode: 'difficulty',
-    base: 200,
-    difficultyMultipliers: { easy: 1, medium: 1.5, hard: 2, very_hard: 2.5 },
+    base: 50,
+    difficultyMultipliers: { easy: 2, medium: 3, hard: 4, very_hard: 6 },
     percentOfCapital: 0.1,
-    min: 50,
-    max: 1200,
+    min: 0,
+    max: 100000,
   },
   questionPenalty: {
     mode: 'difficulty',
@@ -168,12 +176,13 @@ export const DEFAULT_CONFIG: GameConfig = {
   strategyWindowSeconds: 40,
   reclaimDecisionWindow: 5,
   reclaimAutoDecline: true,
+  takeDecisionSeconds: 15,
   submissionGraceMs: 1500,
 
-  premiumStartingBid: 300,
-  premiumBidIncrement: 100,
-  finalPremiumStartingBid: 500,
-  finalPremiumBidIncrement: 100,
+  premiumStartingBid: 200,
+  premiumBidIncrement: 1,
+  finalPremiumStartingBid: 200,
+  finalPremiumBidIncrement: 1,
 
   hideLeaderboardLastQuestions: 4,
   podiumPlaces: 3,
@@ -194,6 +203,7 @@ const NON_NEGATIVE_KEYS: (keyof GameConfig)[] = [
   'finalPremiumStartingBid',
   'finalPremiumBidIncrement',
   'reclaimDecisionWindow',
+  'takeDecisionSeconds',
   'premiumWindowSeconds',
   'premiumSolveSeconds',
   'strategyWindowSeconds',

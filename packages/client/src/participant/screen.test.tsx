@@ -62,6 +62,9 @@ const me = (over: Partial<TeamView> = {}): TeamView => ({
   questionDeadline: null,
   premiumUnlocked: false,
   premiumRisk: null,
+  canDecidePremium: false,
+  premiumDecisionDeadline: null,
+  premiumDecision: null,
   lastResult: null,
   reclaimOffer: null,
   inAuction: false,
@@ -96,6 +99,8 @@ const premium = (over: Partial<PremiumState> = {}): PremiumState => ({
   failedTeamId: null,
   outcome: null,
   windowEndsAt: null,
+  decisionDeadline: null,
+  decisions: {},
   ...over,
 });
 
@@ -247,6 +252,26 @@ describe('useScreen', () => {
         game: game({ phase: 'reclaim' }),
         premium: premium({ stage: 'reclaim_offer', offerTeamId: 'T09' }),
         me: me({ teamId: 'T01' }),
+      }),
+    ).toBe('waiting');
+  });
+
+  it('shows the take/sit-out screen to the winner during premium_decision', () => {
+    expect(
+      screenFor({
+        game: game({ phase: 'premium_decision' }),
+        premium: premium({ stage: 'decision', activeTeamId: 'T01' }),
+        me: me({ teamId: 'T01', canDecidePremium: true }),
+      }),
+    ).toBe('premium_decision');
+  });
+
+  it('makes non-winners wait during premium_decision', () => {
+    expect(
+      screenFor({
+        game: game({ phase: 'premium_decision' }),
+        premium: premium({ stage: 'decision', activeTeamId: 'T01' }),
+        me: me({ teamId: 'T05', canDecidePremium: false }),
       }),
     ).toBe('waiting');
   });

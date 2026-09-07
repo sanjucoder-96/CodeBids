@@ -517,9 +517,20 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
     case 'PREMIUM_ATTEMPT_FAILED':
     case 'PREMIUM_RECLAIM_ACCEPTED':
     case 'PREMIUM_CLOSED':
+    case 'PREMIUM_DECISION_MADE':
       set({ premium: d.premium as PremiumState });
       if (frame.t === 'PREMIUM_ATTEMPT_FAILED') sound.play('fail');
       break;
+
+    case 'PREMIUM_DECISION_WINDOW': {
+      const payload = d as unknown as { premium: PremiumState; eligibleTeamIds: string[] };
+      set({ premium: payload.premium });
+      sound.play('reclaim');
+      if (state.role === 'participant' && state.me && payload.eligibleTeamIds.includes(state.me.teamId)) {
+        get().showFlash({ kind: 'reclaim', title: 'YOU WON', subtitle: 'TAKE OR SIT OUT' });
+      }
+      break;
+    }
 
     case 'PREMIUM_RECLAIM_OFFERED': {
       const payload = d as unknown as { premium: PremiumState; teamId: string; risk: number };

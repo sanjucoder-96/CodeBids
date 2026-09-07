@@ -178,9 +178,9 @@ describe('participant bidding', () => {
   });
 
   it('rejects a bid beyond the team ceiling with a reason, not a crash', async () => {
-    // Put T04 below the current call: capital 700, reserve 500, ceiling 200,
-    // while the auction is already past 200.
-    await organizer.call('ADJUST_CAPITAL', { teamId: 'T04', amount: -300, reason: 'test ceiling' });
+    // Drain T04's purse below the current call. With no protected reserve the
+    // ceiling is the whole purse, so ₹100 cannot reach a bid past ₹200.
+    await organizer.call('ADJUST_CAPITAL', { teamId: 'T04', amount: -1400, reason: 'test ceiling' });
     const t4 = await team('T04');
     const ack = await t4.call('PLACE_BID', {});
     const result = (ack.d as { data: { accepted: boolean; message?: string } }).data;

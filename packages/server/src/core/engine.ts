@@ -64,6 +64,7 @@ import type {
   PodiumEntry,
   PremiumPreview,
   PremiumState,
+  PremiumDecision,
   ProjectorMode,
   Question,
   QuestionPublic,
@@ -225,6 +226,13 @@ export class GameEngine {
     for (const premium of this.repo.listPremiumStates()) {
       if (premium.stage === 'reclaim_offer' && premium.offerDeadline) {
         this.scheduleReclaimExpiry(premium.questionId, premium.offerDeadline);
+      }
+      if (premium.stage === 'decision' && premium.decisionDeadline) {
+        this.setTimer(
+          `decision:${premium.questionId}`,
+          Math.max(0, premium.decisionDeadline - this.now()),
+          () => this.resolvePremiumDecisions(premium.questionId),
+        );
       }
     }
     const slot = this.currentSlot();
@@ -1256,7 +1264,6 @@ export class GameEngine {
       metadata: { amount, bidders: premium.ladder.length },
     });
 
-    this.setPhase('premium_authorized');
     this.emit('AUCTION_CLOSED', { auction: view }, ALL);
     this.emit(
       'AUCTION_WON',
@@ -1264,14 +1271,129 @@ export class GameEngine {
       ALL,
     );
     this.emit('PREMIUM_UNLOCKED', { premium, teamId: winner, risk: amount }, ALL);
+
+    // The winner now has a fixed window to TAKE the question or SIT OUT
+    // (spec sections 6, 7) before it becomes active.
+    this.enterPremiumDecision(auction.questionId, winner, amount);
+    return view;
+  }
+
+  /**
+   * Open the 15-second TAKE / SIT-OUT window for the team that won a premium
+   * (spec sections 6, 7). The server owns the deadline; the question only
+   * becomes active when the window resolves, so every taking team starts from
+   * one authoritative moment.
+   */
+  private enterPremiumDecision(questionId: string, winnerId: string, risk: number): void {
+    const slot = this.currentSlot();
+    const premium = this.repo.getPremiumState(questionId);
+    if (!slot || !premium) return;
+
+    const seconds = Math.max(1, this.config.takeDecisionSeconds);
+    const deadline = this.now() + seconds * 1000;
+    premium.stage = 'decision';
+    premium.decisionDeadline = deadline;
+    premium.decisions = {};
+    this.repo.savePremiumState(premium);
+
+    this.setPhase('premium_decision');
+    this.setProjectorMode('auto');
+    this.setTimer(`decision:${questionId}`, seconds * 1000, () =>
+      this.resolvePremiumDecisions(questionId),
+    );
+
+    this.audit('PREMIUM_DECISION_WINDOW', {
+      teamId: winnerId,
+      questionId,
+      slotIndex: slot.index,
+      metadata: { risk, deadline },
+    });
     this.emit(
-      'QUESTION_UNLOCKED',
-      { questionId: auction.questionId, teamId: winner, risk: amount },
-      toTeam(winner),
+      'PREMIUM_DECISION_WINDOW',
+      { premium, deadline, eligibleTeamIds: [winnerId] },
+      ALL,
     );
     this.broadcastAllTeamViews();
     this.broadcastLiveEvents();
-    return view;
+  }
+
+  /** The set of teams entitled to TAKE/SIT-OUT this premium (the winner). */
+  private eligibleDeciders(premium: PremiumState): string[] {
+    return premium.activeTeamId ? [premium.activeTeamId] : [];
+  }
+
+  /**
+   * A team records its TAKE or SIT-OUT choice. Server-authoritative: only an
+   * eligible team, only while the window is open, only before the deadline.
+   */
+  submitPremiumDecision(teamId: string, take: boolean): void {
+    const slot = this.currentSlot();
+    if (!slot) throw new EngineError('no_premium', 'No premium is open');
+    const premium = this.repo.getPremiumState(slot.questionId);
+    if (!premium || premium.stage !== 'decision') {
+      throw new EngineError('no_decision', 'The take/sit-out window is not open');
+    }
+    if (!this.eligibleDeciders(premium).includes(teamId)) {
+      throw new EngineError('not_eligible', 'Your team cannot take this premium');
+    }
+    if (premium.decisionDeadline !== null && this.now() > premium.decisionDeadline) {
+      throw new EngineError('decision_closed', 'The take/sit-out window has closed');
+    }
+
+    const decision: PremiumDecision = take ? 'take' : 'sit_out';
+    premium.decisions = { ...premium.decisions, [teamId]: decision };
+    this.repo.savePremiumState(premium);
+
+    this.audit('PREMIUM_DECISION', {
+      teamId,
+      questionId: slot.questionId,
+      slotIndex: slot.index,
+      metadata: { decision },
+    });
+    this.emit('PREMIUM_DECISION_MADE', { premium, teamId, decision }, ALL);
+    this.broadcastAllTeamViews();
+    this.broadcastLiveEvents();
+
+    // Resolve early once every eligible team has chosen - no dead time.
+    const eligible = this.eligibleDeciders(premium);
+    if (eligible.every((id) => premium.decisions[id] !== undefined)) {
+      this.resolvePremiumDecisions(slot.questionId);
+    }
+  }
+
+  /**
+   * Close the decision window and start the question. Any eligible team that
+   * never chose defaults to SIT OUT (spec section 7). A taking team begins the
+   * attempt; if nobody takes, the premium closes undecided.
+   */
+  private resolvePremiumDecisions(questionId: string): void {
+    const slot = this.currentSlot();
+    const premium = this.repo.getPremiumState(questionId);
+    if (!slot || !premium || premium.stage !== 'decision') return;
+
+    this.clearTimer(`decision:${questionId}`);
+    premium.decisionDeadline = null;
+    this.repo.savePremiumState(premium);
+
+    const winnerId = premium.activeTeamId;
+    const took = winnerId ? premium.decisions[winnerId] === 'take' : false;
+
+    if (took) {
+      // Synchronised start: startPremiumAttempt is the single authoritative
+      // moment the question becomes active for every taking team.
+      this.startPremiumAttempt();
+      return;
+    }
+
+    // Winner sat out (or let the window lapse -> default SIT OUT). The premium
+    // closes with no attempt; no capital is risked because none was taken.
+    this.audit('PREMIUM_DECLINED', {
+      teamId: winnerId,
+      questionId,
+      slotIndex: slot.index,
+      metadata: { reason: winnerId && premium.decisions[winnerId] ? 'sit_out' : 'no_response' },
+    });
+    this.closePremium('no_takers');
   }
 
   cancelAuction(): void {
@@ -1351,6 +1473,9 @@ export class GameEngine {
     if (!canStartAnotherAttempt(premium)) {
       throw new EngineError('max_attempts', 'This premium has used both attempts');
     }
+    // Starting the attempt ends any open decision window.
+    this.clearTimer(`decision:${question.id}`);
+    premium.decisionDeadline = null;
 
     const attemptNumber = (premium.attemptNumber + 1) as 1 | 2;
     premium.attemptNumber = attemptNumber;
@@ -1649,6 +1774,7 @@ export class GameEngine {
     this.clearTimer(`reclaim:${slot.questionId}`);
     this.clearTimer(`premium:${slot.questionId}`);
     this.clearTimer(`window:${slot.questionId}`);
+    this.clearTimer(`decision:${slot.questionId}`);
 
     premium.stage = 'closed';
     premium.ladder = closeLadder(premium.ladder);
@@ -1795,6 +1921,10 @@ export class GameEngine {
     }
     if (key.startsWith('reclaim:')) {
       this.expireReclaim(key.slice('reclaim:'.length));
+      return true;
+    }
+    if (key.startsWith('decision:')) {
+      this.resolvePremiumDecisions(key.slice('decision:'.length));
       return true;
     }
     if (key.startsWith('premium:')) {
@@ -2089,6 +2219,16 @@ export class GameEngine {
       questionDeadline,
       premiumUnlocked: premium?.activeTeamId === teamId,
       premiumRisk: premium?.activeTeamId === teamId ? premium.activeRisk : null,
+      canDecidePremium:
+        premium?.stage === 'decision' && premium.activeTeamId === teamId,
+      premiumDecisionDeadline:
+        premium?.stage === 'decision' && premium.activeTeamId === teamId
+          ? premium.decisionDeadline
+          : null,
+      premiumDecision:
+        premium && premium.activeTeamId === teamId
+          ? (premium.decisions[teamId] ?? null)
+          : null,
       lastResult: last
         ? {
             questionId: last.questionId,

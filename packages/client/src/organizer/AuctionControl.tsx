@@ -143,16 +143,16 @@ export function AuctionControl() {
 
       <div className="auction-ctl__bids">
         <div className="auction-ctl__bid">
+          <span className="label">Minimum bid</span>
+          <span className="auction-ctl__bid-value num">{money(auction.auction.startingBid, symbol)}</span>
+        </div>
+        <div className="auction-ctl__bid">
           <span className="label">Current bid</span>
           <RollingNumber
             className="auction-ctl__bid-value num"
             value={auction.auction.currentBid ?? 0}
             format={(n) => (auction.auction.currentBid === null ? '—' : money(n, symbol))}
           />
-        </div>
-        <div className="auction-ctl__bid auction-ctl__bid--next">
-          <span className="label">Next call</span>
-          <span className="auction-ctl__bid-value num">{money(auction.nextBid, symbol)}</span>
         </div>
         <div className="auction-ctl__bid">
           <span className="label">Leader</span>
@@ -169,8 +169,8 @@ export function AuctionControl() {
       {!closed ? (
         <>
           <div className="auction-ctl__hint">
-            Click a team to record a bid at <strong>{money(auction.nextBid, symbol)}</strong>. Greyed
-            teams cannot legally reach that price.
+            Teams bid from their own laptops. Use these tiles only as a fallback to record a bid for
+            a team whose laptop is down — greyed teams cannot afford the amount.
             <span className="auction-ctl__keys">
               <kbd>1</kbd> going once <kbd>2</kbd> going twice <kbd>⌫</kbd> undo{' '}
               <kbd>⇧↵</kbd> close
