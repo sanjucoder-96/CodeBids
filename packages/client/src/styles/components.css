@@ -654,25 +654,24 @@
 .pj-leaderboard__board .lb {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
   gap: 10px;
 }
 
 .pj-leaderboard__board .lb__body {
   display: flex;
-  flex: 1;
-  min-height: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
 }
 
 .pj-leaderboard__board .lb--projector .lb__row {
-  flex: 1 1 0;
-  min-height: 0;
+  /* Natural, content-sized rows at full projector type. The whole board is
+     scaled as one piece to fit the screen (see FitToViewport), so rows never
+     need to shrink or clip here. Trimmed vertical padding keeps the natural
+     height down so the fit scale stays high and the board fills the width. */
   margin-bottom: 0;
+  padding-top: var(--sp-2);
+  padding-bottom: var(--sp-2);
   align-items: center;
-  overflow: hidden;
 }
 
 /* Ten to twelve teams: trim the vertical padding before the type. */
@@ -697,10 +696,7 @@
   grid-template-columns: 80px 1fr 150px 220px;
 }
 
-/* Seven to ten teams: full type, tighter padding. */
-.pj-leaderboard__board[data-density='normal'] .lb--projector .lb__row {
-  padding: var(--sp-3) var(--sp-6);
-}
+/* Seven to ten teams: standard projector type; the board scales to fit. */
 
 /* ==================================================================== *
  * FILTER CHIPS

@@ -12,6 +12,7 @@
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { Leaderboard } from '../ui/Leaderboard.js';
+import { FitToViewport } from './FitToViewport.js';
 import { slotLabel } from '../lib/format.js';
 
 /** As many rows as stay legible from the back of a hall. */
@@ -30,7 +31,8 @@ export function ProjectorLeaderboard() {
   const density = shown <= 6 ? 'roomy' : 'normal';
 
   return (
-    <div className="pj-leaderboard">
+    <FitToViewport>
+      <div className="pj-leaderboard">
       <header className="pj-header">
         <div>
           <motion.div
@@ -86,6 +88,7 @@ export function ProjectorLeaderboard() {
           </span>
         ) : null}
       </footer>
-    </div>
+      </div>
+    </FitToViewport>
   );
 }

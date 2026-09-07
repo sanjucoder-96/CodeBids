@@ -2049,7 +2049,10 @@ kbd {
 .projector {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  /* Exactly the viewport, not min-height: the leaderboard's scale-to-fit needs
+     a real height bound to measure against, and every projector view is meant
+     to fill one screen anyway. */
+  height: 100vh;
   display: flex;
   flex-direction: column;
   padding: var(--sp-8) var(--sp-12);
@@ -2082,7 +2085,7 @@ kbd {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--sp-6);
-  margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-4);
 }
 
 .pj-header__eyebrow {
@@ -2132,10 +2135,22 @@ kbd {
   color: var(--text-faint);
 }
 
+.pj-fit {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.pj-fit__inner {
+  width: 100%;
+  transform-origin: center center;
+}
+
 .pj-leaderboard {
   display: flex;
-  flex: 1;
-  min-height: 0;
   flex-direction: column;
 }
 
@@ -2144,15 +2159,12 @@ kbd {
   font-weight: 800;
   letter-spacing: var(--tracking-widest);
   color: var(--accent);
-  margin-bottom: var(--sp-5);
+  margin-bottom: var(--sp-3);
 }
 
 .pj-leaderboard__board {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .pj-footer {
