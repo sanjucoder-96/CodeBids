@@ -2108,6 +2108,37 @@ export class GameEngine {
     throw new EngineError('join_code_exhausted', 'Could not allocate a unique join code');
   }
 
+  /** The lowest T## id not already taken (robust to deleted teams). */
+  private nextTeamId(): string {
+    const taken = new Set(this.repo.listTeams().map((t) => t.id));
+    for (let n = 1; n <= 999; n++) {
+      const id = padTeamNumber(n);
+      if (!taken.has(id)) return id;
+    }
+    throw new EngineError('team_limit', 'Too many teams');
+  }
+
+  /**
+   * Self-service registration: a participant opens the IP link and enters their
+   * TEAM NAME. There is no pre-issued roster and no fixed team count - teams are
+   * created as they arrive. Entering a name that already exists RE-JOINS that
+   * team (a teammate's second laptop, or a reconnect from a new device), rather
+   * than creating a duplicate. The internal T## id is never shown; the name is.
+   */
+  registerTeam(name: string): Team {
+    const trimmed = name.trim().replace(/\s+/g, ' ');
+    if (!trimmed) throw new EngineError('bad_name', 'Enter a team name');
+    if (trimmed.length > 24) throw new EngineError('bad_name', 'Team name is too long (max 24 characters)');
+
+    const existing = this.repo
+      .listTeams()
+      .find((t) => t.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing;
+
+    const [created] = this.createTeams([{ id: this.nextTeamId(), name: trimmed }]);
+    return created as Team;
+  }
+
   updateTeam(teamId: string, patch: Parameters<Repo['updateTeam']>[1]): void {
     const existing = this.requireTeam(teamId);
     this.repo.updateTeam(teamId, patch);

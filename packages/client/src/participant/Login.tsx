@@ -1,6 +1,10 @@
 /**
- * Team pairing (spec section 37). The team types the join code printed on its
- * table card; the server exchanges it for a session bound to that team only.
+ * Team join (self-service).
+ *
+ * There is no printed roster: a team opens the event IP link and types its TEAM
+ * NAME to join. A new name creates the team; an existing name re-joins it (a
+ * teammate's second laptop, or a reconnect). A join code is offered only as a
+ * fallback for a team the organizer pre-created with a printed card.
  */
 
 import { useEffect, useState, type FormEvent } from 'react';
@@ -12,7 +16,11 @@ interface Props {
   onLogin: (token: string) => void;
 }
 
+type Mode = 'name' | 'code';
+
 export function Login({ onLogin }: Props) {
+  const [mode, setMode] = useState<Mode>('name');
+  const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,25 +29,32 @@ export function Login({ onLogin }: Props) {
 
   // Explain WHY the team was sent back here (usually an event reset).
   useEffect(() => {
-    if (authError) setError(`${authError}. Please enter your join code again.`);
+    if (authError) setError(`${authError}. Enter your team name again to rejoin.`);
   }, [authError]);
+
+  const value = mode === 'name' ? name : code;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || code.trim().length === 0) return;
+    if (busy || value.trim().length === 0) return;
     setBusy(true);
     setError(null);
     sound.unlock();
 
+    const request =
+      mode === 'name'
+        ? { url: '/api/auth/team/register', body: { name: name.trim() }, fallback: 'Could not join. Try a different name.' }
+        : { url: '/api/auth/team', body: { joinCode: code.trim() }, fallback: 'That join code was not recognised.' };
+
     try {
-      const response = await fetch('/api/auth/team', {
+      const response = await fetch(request.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ joinCode: code.trim() }),
+        body: JSON.stringify(request.body),
       });
       const payload = (await response.json()) as { token?: string; message?: string };
       if (!response.ok || !payload.token) {
-        setError(payload.message ?? 'That join code was not recognised.');
+        setError(payload.message ?? request.fallback);
         setBusy(false);
         return;
       }
@@ -67,27 +82,50 @@ export function Login({ onLogin }: Props) {
         </div>
 
         <form onSubmit={submit} className="stack" style={{ gap: 'var(--sp-4)' }}>
-          <div className="field">
-            <label className="label" htmlFor="join-code">
-              Team join code
-            </label>
-            <input
-              id="join-code"
-              className="input input--key"
-              value={code}
-              onChange={(event) => setCode(event.target.value.toUpperCase())}
-              placeholder="ABC123"
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              maxLength={12}
-              autoFocus
-              aria-describedby="join-help"
-            />
-            <p id="join-help" className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-              Printed on your team card. Ask your volunteer if you cannot find it.
-            </p>
-          </div>
+          {mode === 'name' ? (
+            <div className="field">
+              <label className="label" htmlFor="team-name">
+                Your team name
+              </label>
+              <input
+                id="team-name"
+                className="input"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="e.g. CODEFORCE"
+                autoComplete="off"
+                maxLength={24}
+                autoFocus
+                aria-describedby="join-help"
+              />
+              <p id="join-help" className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
+                Pick your team name to join. If a teammate has already joined, type the same name to
+                join them.
+              </p>
+            </div>
+          ) : (
+            <div className="field">
+              <label className="label" htmlFor="join-code">
+                Team join code
+              </label>
+              <input
+                id="join-code"
+                className="input input--key"
+                value={code}
+                onChange={(event) => setCode(event.target.value.toUpperCase())}
+                placeholder="ABC123"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={12}
+                autoFocus
+                aria-describedby="join-help"
+              />
+              <p id="join-help" className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
+                Only if the organizer gave your team a printed code.
+              </p>
+            </div>
+          )}
 
           {error ? (
             <motion.div
@@ -104,12 +142,23 @@ export function Login({ onLogin }: Props) {
           <button
             className="btn btn--primary btn--lg btn--block"
             type="submit"
-            disabled={busy || code.trim().length === 0}
+            disabled={busy || value.trim().length === 0}
           >
             {busy ? <span className="spinner" /> : null}
             {busy ? 'Joining…' : 'Enter the market'}
           </button>
         </form>
+
+        <button
+          type="button"
+          className="login__switch"
+          onClick={() => {
+            setMode((m) => (m === 'name' ? 'code' : 'name'));
+            setError(null);
+          }}
+        >
+          {mode === 'name' ? 'Have a printed join code? Use it instead' : 'Join with a team name instead'}
+        </button>
 
         <div className="login__foot dim">
           This event runs entirely on the local network. No internet required.

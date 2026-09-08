@@ -75,6 +75,25 @@
   font-size: var(--fs-sm);
 }
 
+.login__switch {
+  display: block;
+  width: 100%;
+  margin-top: var(--sp-3);
+  padding: var(--sp-2);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  text-align: center;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.login__switch:hover {
+  color: var(--accent);
+}
+
 .login__foot {
   text-align: center;
   font-size: var(--fs-xs);
@@ -1584,6 +1603,29 @@ kbd {
   font-size: var(--fs-md);
   font-weight: 800;
   letter-spacing: 0.02em;
+}
+
+.team-tile__title {
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-tile__sub {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.team-tile:hover:not(:disabled) .team-tile__title,
+.team-tile:hover:not(:disabled) .team-tile__sub {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .team-tile__max {

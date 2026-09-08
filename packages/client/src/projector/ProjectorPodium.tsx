@@ -127,7 +127,6 @@ export function ProjectorPodium() {
               </motion.div>
 
               <div className="pj-plinth__team">{entry.name}</div>
-              <div className="pj-plinth__id mono">{entry.teamId}</div>
 
               <AnimatedNumber
                 className="pj-plinth__capital num"

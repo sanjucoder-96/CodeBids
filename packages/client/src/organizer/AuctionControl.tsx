@@ -125,6 +125,7 @@ export function AuctionControl() {
   }
 
   const leader = auction.auction.currentLeaderTeamId;
+  const nameOf = (id: string | null) => (id ? (teams.find((t) => t.id === id)?.name ?? id) : '—');
   const closed = auction.auction.status === 'closed';
   const isFinal = auction.preview.isFinalPremium;
 
@@ -160,7 +161,7 @@ export function AuctionControl() {
         <div className="auction-ctl__bid">
           <span className="label">Leader</span>
           <span className="auction-ctl__bid-value auction-ctl__leader">
-            {leader ?? '—'}
+            {nameOf(leader)}
           </span>
         </div>
         <div className="auction-ctl__bid">
@@ -206,8 +207,8 @@ export function AuctionControl() {
                         : `Max bid ${money(team.maxBid, symbol)} — cannot reach ${money(target, symbol)}`
                   }
                 >
-                  <span className="team-tile__id">{team.id}</span>
-                  <span className="team-tile__name">{team.name}</span>
+                  <span className="team-tile__title">{team.name}</span>
+                  <span className="team-tile__sub mono">{team.id}</span>
                   <span className="team-tile__purse num">Purse {money(team.capital, symbol)}</span>
                   <span className="team-tile__max num">Max {money(team.maxBid, symbol)}</span>
                   <span className="team-tile__status" data-eligible={eligible} data-leader={isLeader}>
@@ -258,7 +259,7 @@ export function AuctionControl() {
             {auction.auction.winnerTeamId ? (
               <>
                 <span className="eyebrow">Sold to</span>
-                <span className="auction-ctl__sold-team">{auction.auction.winnerTeamId}</span>
+                <span className="auction-ctl__sold-team">{nameOf(auction.auction.winnerTeamId)}</span>
                 <span className="auction-ctl__sold-amount num">
                   {money(auction.auction.winningAmount ?? 0, symbol)}
                 </span>

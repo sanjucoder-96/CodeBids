@@ -35,6 +35,9 @@ export function AuctionScreen() {
 
   const isFinal = auction.preview.isFinalPremium;
   const leader = auction.auction.currentLeaderTeamId;
+  const leaderName = leader
+    ? (auction.bidders.find((b) => b.teamId === leader)?.teamName ?? leader)
+    : null;
   const iAmLeading = leader === me.teamId;
   const myBid = me.myHighestBid;
   const closed = auction.auction.status === 'closed';
@@ -94,7 +97,7 @@ export function AuctionScreen() {
           />
           {currentBid !== null && leader ? (
             <span className="auction__next">
-              held by <strong>{leader === me.teamId ? 'YOUR TEAM' : leader}</strong>
+              held by <strong>{leader === me.teamId ? 'YOUR TEAM' : leaderName}</strong>
             </span>
           ) : (
             <span className="auction__next">opens at {money(startingBid, symbol)}</span>
@@ -172,7 +175,6 @@ export function AuctionScreen() {
                 >
                   <span className="bidder__rank num">{index + 1}</span>
                   <span className="bidder__team">
-                    <span className="bidder__id mono">{bidder.teamId}</span>
                     <span className="bidder__name">{bidder.teamName}</span>
                   </span>
                   <span className="bidder__amount num">{money(bidder.amount, symbol)}</span>
@@ -195,7 +197,7 @@ export function AuctionScreen() {
         <motion.div className="panel panel--pad auction__you" variants={fadeUp} initial="hidden" animate="show">
           <span className="panel__title">Your position</span>
           <div className="auction__you-grid">
-            <Metric label="Your team" value={me.teamId} />
+            <Metric label="Your team" value={teams.find((t) => t.id === me.teamId)?.name ?? me.teamId} />
             <Metric label="Your purse" value={money(me.capital, symbol)} accent />
             <Metric label="Your max bid" value={money(ceiling, symbol)} />
             <Metric label="Your highest bid" value={myBid === null ? '—' : money(myBid, symbol)} />

@@ -127,9 +127,18 @@ export class AuthService {
   loginTeam(joinCode: string): { token: string; teamId: string } | null {
     const team = this.repo.getTeamByJoinCode(normaliseKey(joinCode));
     if (!team) return null;
-    const token = this.mint('participant', team.id);
-    this.repo.createSession(token, team.id, 'participant');
-    return { token, teamId: team.id };
+    return this.sessionForTeam(team.id);
+  }
+
+  /**
+   * Mint and persist a participant session for a known team id. Used by
+   * self-service registration, where the team is identified by the name the
+   * participant typed rather than by a printed code.
+   */
+  sessionForTeam(teamId: string): { token: string; teamId: string } {
+    const token = this.mint('participant', teamId);
+    this.repo.createSession(token, teamId, 'participant');
+    return { token, teamId };
   }
 
   loginOrganizer(passcode: string): { token: string } | null {

@@ -23,6 +23,10 @@ export function ProjectorAuction() {
   const status = auction.auction.status;
   const closed = status === 'closed';
   const number = auction.preview.premiumNumber;
+  const leaderId = auction.auction.currentLeaderTeamId;
+  const leaderName = leaderId
+    ? (auction.bidders.find((b) => b.teamId === leaderId)?.teamName ?? leaderId)
+    : null;
 
   if (closed && auction.auction.winnerTeamId) {
     return <SoldCard
@@ -71,8 +75,8 @@ export function ProjectorAuction() {
         <div className="pj-auction__next">
           {auction.auction.currentBid === null
             ? `TEAMS BID FROM ${money(auction.auction.startingBid, symbol)}`
-            : auction.auction.currentLeaderTeamId
-              ? `LEADER ${auction.auction.currentLeaderTeamId}`
+            : leaderName
+              ? `LEADER · ${leaderName}`
               : 'HIGHEST BID WINS'}
         </div>
       </div>
@@ -107,7 +111,7 @@ export function ProjectorAuction() {
                 exit={{ opacity: 0, scale: 0.75, transition: { duration: 0.22 } }}
                 transition={{ type: 'spring', stiffness: 380, damping: 30 }}
               >
-                <span className="pj-bidder__id">{bidder.teamId}</span>
+                <span className="pj-bidder__id">{bidder.teamName}</span>
                 <span className="pj-bidder__amount num">{money(bidder.amount, symbol)}</span>
               </motion.div>
             ))}
@@ -157,7 +161,6 @@ function SoldCard({
       >
         {teamName || teamId}
       </motion.div>
-      <div className="pj-sold__id">{teamId}</div>
       <motion.div
         className="pj-sold__amount num"
         initial={{ opacity: 0, scale: 0.8 }}

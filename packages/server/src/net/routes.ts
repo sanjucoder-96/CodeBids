@@ -72,6 +72,33 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return { token: session.token, teamId: session.teamId, teamName: team?.name ?? session.teamId, me: view };
   });
 
+  /**
+   * Self-service team registration (no printed roster). A participant opens the
+   * IP link and enters their TEAM NAME; the server creates the team if it is new,
+   * or re-joins it if a teammate already registered that name.
+   */
+  app.post('/api/auth/team/register', async (request, reply) => {
+    const body = request.body as { name?: string } | undefined;
+    let team;
+    try {
+      team = engine.registerTeam(String(body?.name ?? ''));
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? 'bad_name';
+      const message = error instanceof Error ? error.message : 'Could not register that team';
+      return reply.code(400).send({ error: code, message });
+    }
+    const session = auth.sessionForTeam(team.id);
+    const view = engine.teamView(team.id);
+    engine.audit('TEAM_REGISTERED', { teamId: team.id, metadata: { name: team.name } });
+    return {
+      token: session.token,
+      teamId: team.id,
+      teamName: team.name,
+      joinCode: engine.getRepo().getJoinCode(team.id),
+      me: view,
+    };
+  });
+
   app.post('/api/auth/organizer', async (request, reply) => {
     const body = request.body as { passcode?: string } | undefined;
     const session = auth.loginOrganizer(String(body?.passcode ?? ''));

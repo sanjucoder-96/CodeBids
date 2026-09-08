@@ -203,9 +203,10 @@ export function TeamsPanel({ token }: { token: string }) {
 
           {rows.length === 0 ? (
             <div className="empty-state">
-              <p className="muted">No teams registered yet.</p>
+              <p className="muted">No teams have joined yet.</p>
               <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-                Add them on the right, or seed demo teams from the Tools tab.
+                Teams join themselves: they open the event link and enter their team name. They will
+                appear here live. You can also add teams manually on the right if you prefer.
               </p>
             </div>
           ) : null}
@@ -214,9 +215,13 @@ export function TeamsPanel({ token }: { token: string }) {
 
       <section className="panel panel--flush organizer__col--side">
         <div className="panel__head">
-          <span className="panel__title">Register teams</span>
+          <span className="panel__title">Add teams manually</span>
         </div>
         <div className="panel__body stack">
+          <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
+            Optional. Teams normally join themselves from the event link by entering their team name —
+            no roster or printed codes needed. Use this only to pre-create teams.
+          </p>
           <div className="field">
             <label className="label" htmlFor="bulk-teams">
               One team per line

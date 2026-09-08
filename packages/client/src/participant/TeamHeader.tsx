@@ -36,7 +36,6 @@ export function TeamHeader({ onLogout }: { onLogout: () => void }) {
           <div className="pheader__mark">CODE MARKET</div>
           <div className="pheader__team">
             <span className="pheader__team-name">{team?.name ?? me.teamId}</span>
-            <span className="badge">{me.teamId}</span>
           </div>
         </div>
 

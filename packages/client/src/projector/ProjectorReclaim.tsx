@@ -54,7 +54,7 @@ export function ProjectorReclaim() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.12 }}
         >
-          <span className="pj-reclaim__failed-team">{premium.failedTeamId}</span> FAILED
+          <span className="pj-reclaim__failed-team">{name(premium.failedTeamId)}</span> FAILED
         </motion.div>
       ) : null}
 
@@ -69,8 +69,7 @@ export function ProjectorReclaim() {
             transition={{ type: 'spring', stiffness: 280, damping: 24 }}
           >
             <div className="pj-reclaim__next-label">SECOND BIDDER · TAKE OR SIT OUT</div>
-            <div className="pj-reclaim__team">{offered}</div>
-            <div className="pj-reclaim__team-name">{name(offered)}</div>
+            <div className="pj-reclaim__team">{name(offered)}</div>
             <div className="pj-reclaim__risk num">{money(premium.offerRisk ?? 0, symbol)} RISK</div>
 
             <div className="pj-reclaim__countdown" data-critical={seconds <= 5}>
@@ -88,7 +87,7 @@ export function ProjectorReclaim() {
             exit={{ opacity: 0 }}
             transition={{ type: 'spring', stiffness: 280, damping: 22 }}
           >
-            <div className="pj-reclaim__resolved-team">{accepted.teamId}</div>
+            <div className="pj-reclaim__resolved-team">{name(accepted.teamId)}</div>
             <div className="pj-reclaim__resolved-word">ACCEPTED</div>
             <div className="pj-reclaim__risk num">{money(accepted.amount, symbol)} AT RISK</div>
           </motion.div>
@@ -123,7 +122,7 @@ export function ProjectorReclaim() {
               <span className="pj-ladder__medal">
                 {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}`}
               </span>
-              <span className="pj-ladder__team">{entry.teamId}</span>
+              <span className="pj-ladder__team">{name(entry.teamId)}</span>
               <span className="pj-ladder__amount num">{money(entry.amount, symbol)}</span>
               <span className="pj-ladder__state">{stateLabel(entry.state)}</span>
             </motion.div>
