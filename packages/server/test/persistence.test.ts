@@ -105,6 +105,44 @@ describe('restart recovery', () => {
     app.close();
   });
 
+  it('auto-submits a staged answer after a reconnect around the deadline (spec 1, 23)', async () => {
+    const file = join(tempDir(), 'staged.db');
+
+    let app = boot(file);
+    app.engine.createTeams([{ id: 'T01', name: 'A' }, { id: 'T02', name: 'B' }]);
+    app.engine.generateRound(20260901);
+    app.engine.startGame();
+
+    // Reach the first normal question and open it.
+    let slot = null;
+    for (let i = 0; i < 8; i++) {
+      app.engine.advance();
+      slot = app.engine.currentSlot();
+      if (slot?.kind === 'normal') break;
+      app.engine.closePremium();
+    }
+    app.engine.openQuestion();
+    const question = app.repo.getQuestion(slot?.questionId as string) as Question;
+
+    // T01 joins and SELECTS an answer but never submits it.
+    app.engine.unlockQuestion('T01', question.id, question.accessKey);
+    app.engine.joinQuestion('T01', question.id);
+    app.engine.stageAnswer('T01', question.id, answerFor(question, true));
+    expect(app.repo.getParticipation('T01', slot?.index as number)?.stagedSubmission).not.toBeNull();
+    app.close(); // the laptop (and server) drops right around the deadline
+
+    // Fresh process: the staged answer survived in SQLite.
+    app = boot(file);
+    expect(app.engine.fireTimer(`deadline:T01:${slot?.index}`)).toBe(true);
+    await new Promise((r) => setTimeout(r, 25));
+
+    const attempts = app.repo.listAttemptsForTeam('T01');
+    expect(attempts).toHaveLength(1);
+    // It was evaluated - not dropped as a blank timeout.
+    expect(attempts[0]?.result === 'correct' || attempts[0]?.result === 'wrong').toBe(true);
+    app.close();
+  });
+
   it('restores an in-flight reclaim offer', async () => {
     const file = join(tempDir(), 'reclaim.db');
 

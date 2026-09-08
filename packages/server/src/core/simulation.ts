@@ -234,15 +234,11 @@ export class Simulator {
     );
     if (!closed.auction.winnerTeamId) return actions;
 
-    // The winner TAKES the premium in the 15s decision window; taking starts
-    // the attempt automatically (spec sections 6, 7).
+    // The winning bidder MUST attempt the premium - there is no sit-out for the
+    // winner (spec section 8). The operator opens the attempt.
     await this.tick(400);
-    this.safe(() => this.engine.submitPremiumDecision(closed.auction.winnerTeamId as string, true));
+    this.safe(() => this.engine.startPremiumAttempt());
     actions++;
-    if (this.engine.gameState().phase === 'premium_decision') {
-      // Fallback if the decision did not auto-start (e.g. clock quirk).
-      this.safe(() => this.engine.startPremiumAttempt());
-    }
 
     const question = this.engine.getRepo().getQuestion(slot.questionId) as Question;
     const attempter = this.engine.currentPremium()?.activeTeamId;

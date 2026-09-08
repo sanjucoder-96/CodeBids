@@ -29,7 +29,6 @@ export function AuctionControl() {
   const pushToast = useStore((s) => s.pushToast);
 
   const [busy, setBusy] = useState(false);
-  const [customBid, setCustomBid] = useState('');
 
   const premiumSlots = useMemo(
     () => sequence.filter((s) => s.kind === 'premium'),
@@ -154,6 +153,10 @@ export function AuctionControl() {
             format={(n) => (auction.auction.currentBid === null ? '—' : money(n, symbol))}
           />
         </div>
+        <div className="auction-ctl__bid" data-accent="true">
+          <span className="label">Next bid</span>
+          <span className="auction-ctl__bid-value num">{money(auction.nextBid, symbol)}</span>
+        </div>
         <div className="auction-ctl__bid">
           <span className="label">Leader</span>
           <span className="auction-ctl__bid-value auction-ctl__leader">
@@ -169,8 +172,9 @@ export function AuctionControl() {
       {!closed ? (
         <>
           <div className="auction-ctl__hint">
-            Teams bid from their own laptops. Use these tiles only as a fallback to record a bid for
-            a team whose laptop is down — greyed teams cannot afford the amount.
+            Watch the room. When a team raises its bid board, click that team — one click records the
+            next bid ({money(auction.nextBid, symbol)}) and the system advances it by ₹100. Greyed
+            teams cannot reach the next bid and are not eligible.
             <span className="auction-ctl__keys">
               <kbd>1</kbd> going once <kbd>2</kbd> going twice <kbd>⌫</kbd> undo{' '}
               <kbd>⇧↵</kbd> close
@@ -180,10 +184,9 @@ export function AuctionControl() {
           <div className="team-grid" role="group" aria-label="Record a bid">
             {teams.map((team) => {
               const isLeader = team.id === leader;
-              // The tile reflects the amount that WOULD be recorded, so a custom
-              // amount immediately re-greys the teams that cannot reach it.
-              const target = customBid.trim() === '' ? auction.nextBid : Number(customBid);
+              const target = auction.nextBid;
               const affordable = team.maxBid >= target;
+              const eligible = team.status === 'active' && affordable && !isLeader;
               const inAuction = auction.bidders.some((b) => b.teamId === team.id);
               return (
                 <motion.button
@@ -193,16 +196,7 @@ export function AuctionControl() {
                   data-in={inAuction}
                   data-poor={!affordable}
                   disabled={busy || isLeader || !affordable || team.status !== 'active'}
-                  onClick={async () => {
-                    const override = customBid.trim() === '' ? undefined : Number(customBid);
-                    await act(
-                      'PLACE_BID',
-                      override === undefined
-                        ? { teamId: team.id }
-                        : { teamId: team.id, amount: override },
-                    );
-                    setCustomBid('');
-                  }}
+                  onClick={() => act('PLACE_BID', { teamId: team.id })}
                   whileTap={{ scale: 0.96 }}
                   title={
                     isLeader
@@ -213,8 +207,12 @@ export function AuctionControl() {
                   }
                 >
                   <span className="team-tile__id">{team.id}</span>
-                  <span className="team-tile__max num">{money(team.maxBid, symbol)}</span>
-                  {isLeader ? <span className="team-tile__flag">LEADING</span> : null}
+                  <span className="team-tile__name">{team.name}</span>
+                  <span className="team-tile__purse num">Purse {money(team.capital, symbol)}</span>
+                  <span className="team-tile__max num">Max {money(team.maxBid, symbol)}</span>
+                  <span className="team-tile__status" data-eligible={eligible} data-leader={isLeader}>
+                    {isLeader ? 'LEADING' : eligible ? `BID ${money(target, symbol)}` : 'NOT ELIGIBLE'}
+                  </span>
                   {team.connectionStatus === 'offline' ? (
                     <span className="team-tile__off" title="Disconnected">
                       ○
@@ -226,20 +224,6 @@ export function AuctionControl() {
           </div>
 
           <div className="auction-ctl__actions">
-            <div className="row">
-              <input
-                className="input"
-                style={{ width: 130 }}
-                placeholder="Custom ₹"
-                value={customBid}
-                inputMode="numeric"
-                onChange={(event) => setCustomBid(event.target.value.replace(/[^0-9]/g, ''))}
-                aria-label="Custom bid amount"
-              />
-              <span className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-                then click a team
-              </span>
-            </div>
             <div className="row">
               <button className="btn btn--ghost" onClick={() => act('UNDO_BID', {})} disabled={busy}>
                 Undo bid

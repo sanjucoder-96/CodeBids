@@ -318,6 +318,8 @@ export const CLIENT_COMMANDS = {
   UNLOCK_QUESTION: 'UNLOCK_QUESTION',
   JOIN_QUESTION: 'JOIN_QUESTION',
   SKIP_QUESTION: 'SKIP_QUESTION',
+  /** Record the selected-but-not-submitted answer so it can auto-submit on timeout. */
+  STAGE_ANSWER: 'STAGE_ANSWER',
   SUBMIT_ANSWER: 'SUBMIT_ANSWER',
   RECLAIM_RESPONSE: 'RECLAIM_RESPONSE',
   PREMIUM_DECISION: 'PREMIUM_DECISION',
@@ -378,6 +380,7 @@ export interface ClientPayloads {
   UNLOCK_QUESTION: { questionId: string; accessKey: string };
   JOIN_QUESTION: { questionId: string };
   SKIP_QUESTION: { questionId: string };
+  STAGE_ANSWER: { questionId: string; submission: SubmissionValue };
   SUBMIT_ANSWER: { questionId: string; submission: SubmissionValue };
   RECLAIM_RESPONSE: { questionId: string; accept: boolean };
 

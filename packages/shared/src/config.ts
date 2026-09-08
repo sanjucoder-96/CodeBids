@@ -141,7 +141,10 @@ export const DEFAULT_CONFIG: GameConfig = {
   normalDifficulties: ['easy', 'medium', 'hard', 'very_hard'],
 
   startingCapital: 1500,
-  protectedReserve: 0,
+  // Every team keeps a protected reserve it can never bid below (spec section 4).
+  // Effective maximum premium bid = capital - reserve, so a fresh team can bid at
+  // most 1500 - 500 = 1000.
+  protectedReserve: 500,
   capitalFloor: 0,
 
   questionOptIn: true,
@@ -174,15 +177,19 @@ export const DEFAULT_CONFIG: GameConfig = {
   premiumWindowSeconds: 420,
   premiumSolveSeconds: 150,
   strategyWindowSeconds: 40,
-  reclaimDecisionWindow: 5,
+  // The second bidder's TAKE / SIT-OUT window when the winner fails (spec 9).
+  reclaimDecisionWindow: 15,
   reclaimAutoDecline: true,
   takeDecisionSeconds: 15,
   submissionGraceMs: 1500,
 
+  // Premium auction ladder (spec section 3): opens at 200, then +100 per bid
+  // (200, 300, 400, ...). The organizer clicks a team and the server advances
+  // the bid by exactly one increment - no arbitrary amounts.
   premiumStartingBid: 200,
-  premiumBidIncrement: 1,
+  premiumBidIncrement: 100,
   finalPremiumStartingBid: 200,
-  finalPremiumBidIncrement: 1,
+  finalPremiumBidIncrement: 100,
 
   hideLeaderboardLastQuestions: 4,
   podiumPlaces: 3,

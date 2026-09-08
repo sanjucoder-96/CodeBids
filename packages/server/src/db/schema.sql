@@ -178,14 +178,19 @@ CREATE TABLE IF NOT EXISTS game_state (
 );
 
 -- Per-team, per-slot participation record.
+-- `staged_submission` holds the answer a team has SELECTED but not yet submitted.
+-- If its clock expires while an answer is staged, the server auto-submits that
+-- selection instead of recording a blank timeout (spec section 1). It survives a
+-- reconnect because it lives here, not in the laptop's memory.
 CREATE TABLE IF NOT EXISTS participation (
-  team_id      TEXT NOT NULL,
-  slot_index   INTEGER NOT NULL,
-  question_id  TEXT NOT NULL,
-  state        TEXT NOT NULL,
-  unlocked_at  INTEGER,
-  joined_at    INTEGER,
-  submitted_at INTEGER,
+  team_id           TEXT NOT NULL,
+  slot_index        INTEGER NOT NULL,
+  question_id       TEXT NOT NULL,
+  state             TEXT NOT NULL,
+  unlocked_at       INTEGER,
+  joined_at         INTEGER,
+  submitted_at      INTEGER,
+  staged_submission TEXT,
   PRIMARY KEY (team_id, slot_index)
 );
 

@@ -20,6 +20,7 @@ import type {
   Question,
   QuestionKind,
   SequenceSlot,
+  SubmissionValue,
   Team,
   TeamQuestionState,
   Transaction,
@@ -864,20 +865,56 @@ export class Repo {
   getParticipation(
     teamId: string,
     slotIndex: number,
-  ): { state: TeamQuestionState; joinedAt: number | null; submittedAt: number | null } | null {
+  ): {
+    state: TeamQuestionState;
+    joinedAt: number | null;
+    submittedAt: number | null;
+    stagedSubmission: SubmissionValue | null;
+  } | null {
     const row = this.db
       .prepare(
-        'SELECT state, joined_at, submitted_at FROM participation WHERE team_id = ? AND slot_index = ?',
+        'SELECT state, joined_at, submitted_at, staged_submission FROM participation WHERE team_id = ? AND slot_index = ?',
       )
       .get(teamId, slotIndex) as
-      | { state: string; joined_at: number | null; submitted_at: number | null }
+      | {
+          state: string;
+          joined_at: number | null;
+          submitted_at: number | null;
+          staged_submission: string | null;
+        }
       | undefined;
     if (!row) return null;
+    let staged: SubmissionValue | null = null;
+    if (row.staged_submission) {
+      try {
+        staged = JSON.parse(row.staged_submission) as SubmissionValue;
+      } catch {
+        staged = null;
+      }
+    }
     return {
       state: row.state as TeamQuestionState,
       joinedAt: row.joined_at,
       submittedAt: row.submitted_at,
+      stagedSubmission: staged,
     };
+  }
+
+  /**
+   * Store (or clear) the answer a team has SELECTED but not yet submitted, so
+   * the server can auto-submit it on timeout (spec section 1). Only touches the
+   * one column, leaving the participation state and timestamps intact.
+   */
+  setStagedSubmission(
+    teamId: string,
+    slotIndex: number,
+    submission: SubmissionValue | null,
+  ): void {
+    this.db
+      .prepare(
+        'UPDATE participation SET staged_submission = ? WHERE team_id = ? AND slot_index = ?',
+      )
+      .run(submission === null ? null : JSON.stringify(submission), teamId, slotIndex);
   }
 
   listParticipationForSlot(

@@ -68,14 +68,14 @@ export function ProjectorReclaim() {
             exit={{ opacity: 0, scale: 1.06 }}
             transition={{ type: 'spring', stiffness: 280, damping: 24 }}
           >
-            <div className="pj-reclaim__next-label">NEXT CHANCE</div>
+            <div className="pj-reclaim__next-label">SECOND BIDDER · TAKE OR SIT OUT</div>
             <div className="pj-reclaim__team">{offered}</div>
             <div className="pj-reclaim__team-name">{name(offered)}</div>
             <div className="pj-reclaim__risk num">{money(premium.offerRisk ?? 0, symbol)} RISK</div>
 
-            <div className="pj-reclaim__countdown" data-critical={seconds <= 2}>
+            <div className="pj-reclaim__countdown" data-critical={seconds <= 5}>
               <div className="pj-reclaim__countdown-value num">{seconds}</div>
-              <div className="pj-reclaim__countdown-label">DECIDING</div>
+              <div className="pj-reclaim__countdown-label">SECONDS</div>
             </div>
           </motion.div>
         ) : accepted ? (

@@ -116,21 +116,28 @@ export function rankMap(rows: readonly LeaderboardRow[]): Map<string, number> {
 }
 
 /**
- * The closing podium (spec section 2).
+ * The closing podium (spec sections 2, 16).
  *
- * Reads the places already decided by `computeLeaderboard` rather than deciding
- * them again, so the ceremony can never contradict the board the hall watched.
- * `places` remains accepted for callers that celebrate fewer places than the
- * board marks.
+ * The ceremony fills EVERY place from the authoritative final ranking, in the
+ * deterministic order `computeLeaderboard` already produced (capital desc, then
+ * the id tie-break). The plinth position is ordinal - 1st, 2nd, 3rd - so a big
+ * tie behind the leader can never blank out 2nd and 3rd: with one leader and
+ * seven teams level behind, the two lowest-id of those seven still take the
+ * silver and bronze plinths, decided by the existing tie-break rule.
+ *
+ * This is deliberately distinct from the board's medal logic
+ * (`awardedPlaces`/`row.podium`), which uses competition ranking and can leave a
+ * medal unawarded. The board shows who tied; the podium always seats three.
  */
 export function computePodium(
   rows: readonly LeaderboardRow[],
   places = 3,
 ): PodiumEntry[] {
   return rows
-    .filter((row) => row.podium !== null && row.podium <= places)
-    .map((row) => ({
-      place: row.podium as number,
+    .filter((row) => row.status === 'active')
+    .slice(0, Math.max(0, places))
+    .map((row, index) => ({
+      place: index + 1,
       teamId: row.teamId,
       name: row.name,
       capital: row.capital,

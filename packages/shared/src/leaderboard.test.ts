@@ -98,10 +98,16 @@ describe('podium (spec 2, 18)', () => {
     expect(rows.filter((r) => r.podium !== null)).toHaveLength(1);
   });
 
-  it('shares a place honestly when teams tie', () => {
+  it('seats three ordinal plinths even when teams tie, by the id tie-break', () => {
     const tied = [team('T01', 2000), team('T02', 2000), team('T03', 1000)];
     const podium = computePodium(computeLeaderboard(tied));
-    expect(podium.map((p) => p.place)).toEqual([1, 1, 3]);
+    // The ceremony fills 1st, 2nd, 3rd from the ranking (spec 16); the board's
+    // shared-medal logic is a separate concern tested elsewhere.
+    expect(podium.map((p) => [p.place, p.teamId])).toEqual([
+      [1, 'T01'],
+      [2, 'T02'],
+      [3, 'T03'],
+    ]);
   });
 
   it('a withdrawn team never takes a podium place', () => {
@@ -199,11 +205,18 @@ describe('podium places only exist once the field separates', () => {
       lastSeenAt: null,
     }));
 
-  it('awards nothing at the start of the round, when every team is tied', () => {
+  it('awards no board medals at the start of the round, when every team is tied', () => {
     const rows = computeLeaderboard(level(['T01', 'T02', 'T03', 'T04'], 1000));
     expect(rows.map((r) => r.rank)).toEqual([1, 1, 1, 1]);
+    // The BOARD withholds medals while the field is level...
     expect(rows.map((r) => r.podium)).toEqual([null, null, null, null]);
-    expect(computePodium(rows, 3)).toEqual([]);
+    // ...but the closing CEREMONY always seats three, ordered by the id
+    // tie-break, so 2nd and 3rd are never blank (spec 16).
+    expect(computePodium(rows, 3).map((p) => [p.place, p.teamId])).toEqual([
+      [1, 'T01'],
+      [2, 'T02'],
+      [3, 'T03'],
+    ]);
   });
 
   it('awards nothing when more teams tie for the lead than there are places', () => {
@@ -219,10 +232,16 @@ describe('podium places only exist once the field separates', () => {
     ];
     const rows = computeLeaderboard(teams);
     expect(rows.map((r) => r.rank)).toEqual([1, 2, 2, 2, 2]);
-    // First is unambiguous and is awarded. Second is a four-way tie that cannot
-    // fill second and third, so the ceremony stops after the winner.
+    // The BOARD awards only first: the four-way tie cannot fill 2nd and 3rd.
     expect(rows.map((r) => r.podium)).toEqual([1, null, null, null, null]);
-    expect(computePodium(rows, 3).map((p) => [p.place, p.teamId])).toEqual([[1, 'T01']]);
+    // The CEREMONY still seats three from the ranking - the leader, then the two
+    // lowest-id of the tied chasers by the id tie-break (spec 16). This is the
+    // exact bug that used to blank out 2nd and 3rd.
+    expect(computePodium(rows, 3).map((p) => [p.place, p.teamId])).toEqual([
+      [1, 'T01'],
+      [2, 'T02'],
+      [3, 'T03'],
+    ]);
   });
 
   it('awards a shared second place when the tie still fits', () => {
@@ -245,7 +264,8 @@ describe('podium places only exist once the field separates', () => {
     const rows = computeLeaderboard(teams);
     expect(rows.map((r) => r.rank)).toEqual([1, 1, 3, 4]);
     expect(rows.map((r) => r.podium)).toEqual([1, 1, 3, null]);
-    expect(computePodium(rows, 3).map((p) => p.place)).toEqual([1, 1, 3]);
+    // The ceremony seats three ordinal plinths regardless of the shared medal.
+    expect(computePodium(rows, 3).map((p) => p.place)).toEqual([1, 2, 3]);
   });
 
   it('awards normally once the field is fully separated', () => {
@@ -257,5 +277,31 @@ describe('podium places only exist once the field separates', () => {
     ];
     const rows = computeLeaderboard(teams);
     expect(rows.map((r) => r.podium)).toEqual([1, 2, 3, null]);
+    // Distinct capitals -> the ceremony matches the board exactly (spec 16).
+    expect(computePodium(rows, 3).map((p) => [p.place, p.teamId])).toEqual([
+      [1, 'T01'],
+      [2, 'T02'],
+      [3, 'T03'],
+    ]);
+  });
+
+  it('always seats three even with a big tie behind the leader (spec 16 fix)', () => {
+    // One leader and seven teams level behind: the classic case where 2nd and
+    // 3rd used to vanish from the podium.
+    const teams = [
+      ...level(['T01'], 5000),
+      ...level(['T02', 'T03', 'T04', 'T05', 'T06', 'T07', 'T08'], 1500),
+    ];
+    const rows = computeLeaderboard(teams);
+    const podium = computePodium(rows, 3);
+    expect(podium).toHaveLength(3);
+    expect(podium.map((p) => p.place)).toEqual([1, 2, 3]);
+    // The two silver/bronze seats go to the lowest-id chasers (the tie-break).
+    expect(podium.map((p) => p.teamId)).toEqual(['T01', 'T02', 'T03']);
+  });
+
+  it('seats only as many plinths as there are teams', () => {
+    const rows = computeLeaderboard(level(['T01', 'T02'], 1500));
+    expect(computePodium(rows, 3)).toHaveLength(2);
   });
 });

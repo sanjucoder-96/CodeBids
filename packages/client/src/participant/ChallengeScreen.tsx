@@ -6,7 +6,7 @@
  * client timer is a display, not a gate.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { isAnswerComplete, type SubmissionValue } from '@code-market/shared';
 import { useStore } from '../lib/store.js';
@@ -26,11 +26,14 @@ export function ChallengeScreen() {
   const [answer, setAnswer] = useState<SubmissionValue | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // Guards against a manual submit and the buzzer auto-submit both firing.
+  const submittedRef = useRef(false);
 
   // A new question must never inherit the previous answer.
   useEffect(() => {
     setAnswer(null);
     setConfirming(false);
+    submittedRef.current = false;
   }, [question?.id]);
 
   /*
@@ -50,29 +53,65 @@ export function ChallengeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question?.id, me?.questionDeadline]);
 
-  if (!question || !me) return null;
-
+  const submittable = !!question && !!me;
   const symbol = config.currencySymbol;
-  const premium = question.kind === 'premium';
-  const complete = isAnswerComplete(question.type, answer, {
-    items: question.question.items?.length,
-    pairs: question.question.left?.length,
-  });
+  const premium = question?.kind === 'premium';
+  const complete =
+    !!question &&
+    isAnswerComplete(question.type, answer, {
+      items: question.question.items?.length,
+      pairs: question.question.left?.length,
+    });
 
-  async function submit() {
-    if (!answer || busy || !question) return;
-    setBusy(true);
-    try {
-      await call('SUBMIT_ANSWER', { questionId: question.id, submission: answer });
-    } catch (error) {
-      pushToast({
-        kind: 'warn',
-        title: error instanceof Error ? error.message : 'Submission failed',
-      });
-      setBusy(false);
-      setConfirming(false);
-    }
-  }
+  /**
+   * Submit the current answer. `silent` suppresses the error toast for the
+   * buzzer auto-submit, where a race with the server's own deadline is expected.
+   */
+  const doSubmit = useCallback(
+    async (silent = false) => {
+      if (!answer || !question || submittedRef.current) return;
+      if (me?.questionState === 'submitted') return;
+      submittedRef.current = true;
+      setBusy(true);
+      try {
+        await call('SUBMIT_ANSWER', { questionId: question.id, submission: answer });
+      } catch (error) {
+        submittedRef.current = false;
+        if (!silent) {
+          pushToast({
+            kind: 'warn',
+            title: error instanceof Error ? error.message : 'Submission failed',
+          });
+        }
+        setBusy(false);
+        setConfirming(false);
+      }
+    },
+    [answer, question, me?.questionState, call, pushToast],
+  );
+
+  const submit = useCallback(() => void doSubmit(false), [doSubmit]);
+
+  // Keep the server's copy of the SELECTED-but-unsent answer up to date, so it
+  // can be auto-submitted if the clock runs out - even if this laptop then
+  // freezes or reconnects (spec sections 1, 23). Debounced, fire-and-forget.
+  useEffect(() => {
+    if (!question || !answer || !complete) return;
+    if (me?.questionState === 'submitted') return;
+    const handle = setTimeout(() => {
+      call('STAGE_ANSWER', { questionId: question.id, submission: answer }).catch(() => undefined);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [question, answer, complete, me?.questionState, call]);
+
+  // When the clock hits zero, auto-submit the selected answer instead of leaving
+  // the team stuck on a timeout (spec section 1). Nothing selected -> the server
+  // records the usual unanswered timeout.
+  const handleExpire = useCallback(() => {
+    if (answer && complete && !submittedRef.current) void doSubmit(true);
+  }, [answer, complete, doSubmit]);
+
+  if (!submittable || !question || !me) return null;
 
   const risk = premium ? (me.premiumRisk ?? 0) : (question.penalty ?? 0);
   const gain = premium ? (me.premiumRisk ?? 0) : (question.reward ?? 0);
@@ -113,6 +152,7 @@ export function ChallengeScreen() {
           label="Time left"
           size="lg"
           tick
+          onExpire={handleExpire}
         />
       </div>
 

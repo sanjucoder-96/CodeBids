@@ -9,7 +9,6 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { money } from '../lib/format.js';
-import { Countdown } from '../ui/Countdown.js';
 
 export function PremiumControl() {
   const premium = useStore((s) => s.premium);
@@ -37,8 +36,6 @@ export function PremiumControl() {
   const attempting = premium.stage === 'attempt_1' || premium.stage === 'attempt_2';
   const canStart = premium.stage === 'sold' && premium.activeTeamId !== null;
   const offering = premium.stage === 'reclaim_offer';
-  const deciding = premium.stage === 'decision';
-  const winnerDecision = premium.activeTeamId ? premium.decisions[premium.activeTeamId] : undefined;
 
   return (
     <section className="panel panel--flush panel--premium">
@@ -66,32 +63,10 @@ export function PremiumControl() {
           </div>
         ) : null}
 
-        {deciding ? (
-          <div className="prem-decide">
-            <div className="row-between">
-              <span className="label">Take / sit-out window</span>
-              {premium.decisionDeadline ? (
-                <Countdown
-                  endsAt={premium.decisionDeadline}
-                  duration={config.takeDecisionSeconds}
-                  label="Deciding"
-                  size="sm"
-                />
-              ) : null}
-            </div>
-            <div className="prem-decide__status" data-choice={winnerDecision ?? 'pending'}>
-              <span className="mono">{premium.activeTeamId}</span>{' '}
-              {winnerDecision === 'take'
-                ? 'chose to TAKE the question'
-                : winnerDecision === 'sit_out'
-                  ? 'chose to SIT OUT'
-                  : 'is deciding…'}
-            </div>
-            <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-              The question starts automatically when the winner takes it or the timer ends. No
-              response counts as sitting out.
-            </p>
-          </div>
+        {canStart && premium.attemptNumber === 0 ? (
+          <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
+            The winning bidder must attempt this premium — there is no sit-out for the winner.
+          </p>
         ) : null}
 
         <div className="row wrap">
@@ -183,7 +158,8 @@ export function PremiumControl() {
                   <span className="ladder__name">{name(entry.teamId)}</span>
                   <span className="ladder__amount num">{money(entry.amount, symbol)}</span>
                   <span className="ladder__state">{entry.state.toUpperCase()}</span>
-                  {entry.state === 'pending' && premium.attemptNumber < 2 && !offering ? (
+                  {/* Only the second bidder (rank 2) can ever be offered a reclaim (spec 7). */}
+                  {entry.rank === 2 && entry.state === 'pending' && premium.attemptNumber < 2 && !offering ? (
                     <button
                       className="btn btn--sm"
                       onClick={() => act('OFFER_RECLAIM', { teamId: entry.teamId })}
@@ -196,8 +172,8 @@ export function PremiumControl() {
               ))}
             </div>
             <p className="dim" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>
-              There is never a second auction. A reclaim re-uses the same question and the
-              candidate's own original bid. Maximum two attempts.
+              There is never a second auction. Only the second bidder can reclaim, at their own
+              original bid — never a third bidder. Maximum two attempts.
             </p>
           </div>
         ) : null}

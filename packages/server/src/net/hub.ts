@@ -218,6 +218,12 @@ export class Hub {
       case CLIENT_COMMANDS.SKIP_QUESTION:
         this.engine.skipQuestion(teamId, String(data.questionId));
         return undefined;
+      case CLIENT_COMMANDS.STAGE_ANSWER:
+        // The team SELECTED an answer but has not submitted it. Held so it can be
+        // auto-submitted if the clock runs out (spec section 1). The session's
+        // team is authoritative; a forged teamId is ignored.
+        this.engine.stageAnswer(teamId, String(data.questionId), data.submission as never);
+        return undefined;
       case CLIENT_COMMANDS.SUBMIT_ANSWER:
         return await this.engine.submitAnswer(
           teamId,
@@ -226,11 +232,6 @@ export class Hub {
         );
       case CLIENT_COMMANDS.RECLAIM_RESPONSE:
         this.engine.resolveReclaim(teamId, Boolean(data.accept));
-        return undefined;
-      case CLIENT_COMMANDS.PREMIUM_DECISION:
-        // TAKE / SIT-OUT for the premium winner (spec sections 6, 7). The
-        // session's team is authoritative; a forged teamId is ignored.
-        this.engine.submitPremiumDecision(teamId, Boolean(data.take));
         return undefined;
       case CLIENT_COMMANDS.PLACE_BID:
         // A team bids as ITSELF: the session's teamId is authoritative and a

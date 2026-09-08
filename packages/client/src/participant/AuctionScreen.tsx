@@ -1,31 +1,25 @@
 /**
- * The participant view of a live premium auction (spec sections 2-5).
+ * The participant view of a live premium auction (spec sections 6, 11, 13).
  *
- * Each team enters its bid AMOUNT on its own laptop and submits it. The server
- * is the authority: it validates the minimum (₹200), the team's purse, and the
- * receipt order that breaks ties (first valid bid at a price wins). Every
- * surface — this screen, the other teams' screens and the projector — updates
- * in real time. The organizer can still record a bid for a team whose laptop
- * has died, so the room is never blocked.
+ * Bidding is run from the physical bid boards: a team raises its board and the
+ * organizer records the bid, which climbs in fixed ₹100 steps. This screen is
+ * therefore a live SPECTATOR view - it shows the current bid, who leads, this
+ * team's own ceiling and every active bidder, all updating in real time. There
+ * is no free-form bid box: the server is the sole authority for the bid ladder.
  */
 
-import { useState, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../lib/store.js';
 import { RollingNumber } from '../ui/AnimatedNumber.js';
 import { money, domainLabel, difficultyLabel } from '../lib/format.js';
 import { fadeUp, staggerChildren } from '../lib/motion.js';
-import { DiamondIcon, FlameIcon, GavelIcon } from '../ui/Icons.js';
+import { DiamondIcon, FlameIcon } from '../ui/Icons.js';
 
 export function AuctionScreen() {
   const auction = useStore((s) => s.auction);
   const me = useStore((s) => s.me);
   const teams = useStore((s) => s.teams);
-  const call = useStore((s) => s.call);
   const symbol = useStore((s) => s.config.currencySymbol);
-  const [bidText, setBidText] = useState('');
-  const [bidding, setBidding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   if (!auction || !me) {
     return (
@@ -33,7 +27,7 @@ export function AuctionScreen() {
         <div className="panel panel--pad">
           <div className="eyebrow">Premium</div>
           <h2 className="screen__title">Auction starting shortly</h2>
-          <p className="muted">Your bid box appears here the moment it opens.</p>
+          <p className="muted">The live bid appears here the moment it opens.</p>
         </div>
       </div>
     );
@@ -47,42 +41,11 @@ export function AuctionScreen() {
 
   const startingBid = auction.auction.startingBid;
   const currentBid = auction.auction.currentBid;
+  const nextBid = auction.nextBid;
   const purse = me.capital;
-  /** The lowest amount the server will accept right now. */
-  const minAcceptable = currentBid === null ? startingBid : currentBid + 1;
-  const canReach = purse >= minAcceptable;
-
-  const parsed = /^\d+$/.test(bidText.trim()) ? Number.parseInt(bidText.trim(), 10) : null;
-  const localReason =
-    parsed === null
-      ? null
-      : parsed < minAcceptable
-        ? `Bid at least ${money(minAcceptable, symbol)}`
-        : parsed > purse
-          ? `That is more than your purse of ${money(purse, symbol)}`
-          : null;
-  const canSubmit = !closed && !iAmLeading && parsed !== null && localReason === null && !bidding;
-
-  async function submitBid(event: FormEvent) {
-    event.preventDefault();
-    if (parsed === null || bidding) return;
-    setBidding(true);
-    setError(null);
-    try {
-      const result = (await call('PLACE_BID', { amount: parsed })) as
-        | { accepted: boolean; message?: string }
-        | undefined;
-      if (result && result.accepted === false) {
-        setError(result.message ?? 'Bid rejected');
-      } else {
-        setBidText('');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bid rejected');
-    } finally {
-      setBidding(false);
-    }
-  }
+  /** This team's own ceiling: capital minus the protected reserve. */
+  const ceiling = me.maxBid;
+  const canReachNext = ceiling >= nextBid;
 
   const status = closed
     ? iAmLeading
@@ -92,8 +55,8 @@ export function AuctionScreen() {
       ? 'YOU HOLD THE HIGHEST BID'
       : myBid !== null
         ? 'YOU ARE IN THE AUCTION'
-        : canReach
-          ? 'ENTER YOUR BID'
+        : canReachNext
+          ? 'RAISE YOUR BOARD TO BID'
           : 'YOUR PURSE CANNOT REACH THE NEXT BID';
 
   const statusKind = closed
@@ -102,7 +65,7 @@ export function AuctionScreen() {
       : 'neutral'
     : iAmLeading
       ? 'gain'
-      : canReach
+      : canReachNext
         ? 'accent'
         : 'loss';
 
@@ -129,22 +92,28 @@ export function AuctionScreen() {
             value={auction.auction.currentBid ?? 0}
             format={(n) => (auction.auction.currentBid === null ? '—' : money(n, symbol))}
           />
-          {currentBid !== null && auction.auction.currentLeaderTeamId ? (
+          {currentBid !== null && leader ? (
             <span className="auction__next">
-              held by <strong>{auction.auction.currentLeaderTeamId}</strong>
+              held by <strong>{leader === me.teamId ? 'YOUR TEAM' : leader}</strong>
             </span>
-          ) : null}
+          ) : (
+            <span className="auction__next">opens at {money(startingBid, symbol)}</span>
+          )}
         </div>
 
-        {/* Two numbers a team needs before it bids (spec sections 2, 9). */}
+        {/* The three numbers a team needs to read the room (spec sections 3, 4). */}
         <div className="auction__facts">
           <div className="auction__fact">
-            <span className="auction__fact-label">Minimum bid</span>
-            <span className="auction__fact-value num">{money(startingBid, symbol)}</span>
+            <span className="auction__fact-label">Next bid</span>
+            <span className="auction__fact-value num">{money(nextBid, symbol)}</span>
           </div>
           <div className="auction__fact" data-accent="true">
             <span className="auction__fact-label">Your purse</span>
             <span className="auction__fact-value num">{money(purse, symbol)}</span>
+          </div>
+          <div className="auction__fact">
+            <span className="auction__fact-label">Your max bid</span>
+            <span className="auction__fact-value num">{money(ceiling, symbol)}</span>
           </div>
         </div>
 
@@ -161,55 +130,12 @@ export function AuctionScreen() {
           </motion.div>
         </AnimatePresence>
 
-        {/* --- the bid box: each team enters its own amount (spec 3) -------- */}
-        {!closed && !iAmLeading ? (
-          <form className="auction__bidform" onSubmit={submitBid}>
-            <div className="auction__bidform-row">
-              <span className="auction__bidform-prefix">{symbol}</span>
-              <input
-                className="input auction__bidinput num"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={bidText}
-                onChange={(event) => {
-                  setBidText(event.target.value.replace(/[^\d]/g, ''));
-                  setError(null);
-                }}
-                placeholder={String(minAcceptable)}
-                aria-label="Your bid amount"
-                disabled={!canReach}
-              />
-              <motion.button
-                type="submit"
-                className="btn btn--premium btn--lg auction__bidsubmit"
-                disabled={!canSubmit}
-                whileTap={canSubmit ? { scale: 0.97 } : undefined}
-              >
-                <span aria-hidden="true" style={{ verticalAlign: '-4px', marginRight: 6 }}>
-                  <GavelIcon size={18} />
-                </span>
-                {bidding ? 'BIDDING…' : 'BID'}
-              </motion.button>
-            </div>
-            {error ?? localReason ? (
-              <motion.p
-                className="auction__bid-error"
-                role="alert"
-                initial={{ x: 0 }}
-                animate={{ x: [0, -6, 6, -3, 0] }}
-                transition={{ duration: 0.3 }}
-              >
-                {error ?? localReason}
-              </motion.p>
-            ) : (
-              <p className="auction__bid-hint dim">
-                {canReach
-                  ? `Enter at least ${money(minAcceptable, symbol)}. Highest bid wins.`
-                  : `Your purse is ${money(purse, symbol)} — below the next bid.`}
-              </p>
-            )}
-          </form>
+        {!closed ? (
+          <p className="auction__bid-hint dim">
+            {canReachNext
+              ? 'Raise your physical bid board — the organizer records your bid. Each bid climbs by ₹100.'
+              : `Your ceiling is ${money(ceiling, symbol)} (purse minus the reserve), below the next bid.`}
+          </p>
         ) : null}
 
         {auction.auction.status === 'going_once' || auction.auction.status === 'going_twice' ? (
@@ -259,7 +185,7 @@ export function AuctionScreen() {
               <div className="empty-state">
                 <p className="muted">No bids yet.</p>
                 <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-                  Be the first to open at {money(startingBid, symbol)}.
+                  Raise your board to open at {money(startingBid, symbol)}.
                 </p>
               </div>
             ) : null}
@@ -271,15 +197,15 @@ export function AuctionScreen() {
           <div className="auction__you-grid">
             <Metric label="Your team" value={me.teamId} />
             <Metric label="Your purse" value={money(me.capital, symbol)} accent />
-            <Metric label="Minimum bid" value={money(startingBid, symbol)} />
+            <Metric label="Your max bid" value={money(ceiling, symbol)} />
             <Metric label="Your highest bid" value={myBid === null ? '—' : money(myBid, symbol)} />
           </div>
 
           <div className="auction__strategy">
             <p className="label">Why the ladder matters</p>
             <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
-              A bid buys two things: the chance to win, and your place in the reclaim order. If the
-              winner fails, the next-highest original bidder is offered the same question at their own
+              A bid buys two things: the chance to win, and your place as the reclaim bidder. If the
+              winner fails, the second-highest bidder alone is offered the same question at their own
               bid — no second auction.
             </p>
           </div>

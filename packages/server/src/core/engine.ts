@@ -64,7 +64,6 @@ import type {
   PodiumEntry,
   PremiumPreview,
   PremiumState,
-  PremiumDecision,
   ProjectorMode,
   Question,
   QuestionPublic,
@@ -236,13 +235,6 @@ export class GameEngine {
     for (const premium of this.repo.listPremiumStates()) {
       if (premium.stage === 'reclaim_offer' && premium.offerDeadline) {
         this.scheduleReclaimExpiry(premium.questionId, premium.offerDeadline);
-      }
-      if (premium.stage === 'decision' && premium.decisionDeadline) {
-        this.setTimer(
-          `decision:${premium.questionId}`,
-          Math.max(0, premium.decisionDeadline - this.now()),
-          () => this.resolvePremiumDecisions(premium.questionId),
-        );
       }
     }
     const slot = this.currentSlot();
@@ -650,7 +642,7 @@ export class GameEngine {
     if (!slot) return;
 
     for (const p of this.repo.listParticipationForSlot(slotIndex)) {
-      if (p.state === 'in_progress') this.expireTeamQuestion(p.teamId, slotIndex);
+      if (p.state === 'in_progress') void this.expireTeamQuestion(p.teamId, slotIndex);
     }
 
     this.repo.setSlotState(slotIndex, 'complete');
@@ -768,11 +760,18 @@ export class GameEngine {
   ): void {
     const deadline = joinedAt + question.timeLimit * 1000 + this.config.submissionGraceMs;
     this.setTimer(`deadline:${teamId}:${slotIndex}`, Math.max(0, deadline - this.now()), () => {
-      this.expireTeamQuestion(teamId, slotIndex);
+      void this.expireTeamQuestion(teamId, slotIndex);
     });
   }
 
-  private expireTeamQuestion(teamId: string, slotIndex: number): void {
+  /**
+   * A team's own clock ran out. If it had SELECTED an answer (staged it), that
+   * answer is auto-submitted and evaluated for real - not thrown away as a blank
+   * timeout (spec section 1). With nothing staged, the existing unanswered
+   * behaviour applies. The server owns the deadline either way, so a frozen or
+   * disconnected laptop is still settled correctly.
+   */
+  private async expireTeamQuestion(teamId: string, slotIndex: number): Promise<void> {
     const participation = this.repo.getParticipation(teamId, slotIndex);
     if (!participation || participation.state !== 'in_progress') return;
     if (this.repo.hasAttempt(teamId, slotIndex)) return;
@@ -781,8 +780,35 @@ export class GameEngine {
     const question = this.repo.getQuestion(slot.questionId);
     if (!question) return;
 
+    const staged = participation.stagedSubmission;
+
     if (slot.kind === 'premium') {
+      if (staged) {
+        const outcome = await this.evaluate(question, staged);
+        if (this.repo.hasAttempt(teamId, slotIndex)) return; // a manual submit won the race
+        this.resolvePremiumAttempt(
+          slot.questionId,
+          outcome.correct ? 'correct' : 'wrong',
+          outcome.detail,
+          staged,
+        );
+        return;
+      }
       this.resolvePremiumAttempt(slot.questionId, 'timeout', 'Time expired');
+      return;
+    }
+
+    if (staged) {
+      const outcome = await this.evaluate(question, staged);
+      if (this.repo.hasAttempt(teamId, slotIndex)) return; // a manual submit won the race
+      this.finishQuestionAttempt(
+        teamId,
+        slot,
+        question,
+        outcome.correct ? 'correct' : 'wrong',
+        outcome,
+        { submission: staged },
+      );
       return;
     }
     this.finishQuestionAttempt(teamId, slot, question, 'timeout', {
@@ -792,6 +818,26 @@ export class GameEngine {
   }
 
   /* --- submissions ------------------------------------------------------ */
+
+  /**
+   * Record the answer a team has SELECTED but not yet submitted (spec section 1).
+   * Held server-side so it survives a reconnect and can be auto-submitted if the
+   * team's clock runs out. Purely private intent - nothing is evaluated, scored
+   * or broadcast here.
+   */
+  stageAnswer(teamId: string, questionId: string, submission: SubmissionValue): void {
+    this.requireTeam(teamId);
+    const slot = this.requireCurrentSlot(questionId);
+    if (this.repo.hasAttempt(teamId, slot.index)) return;
+
+    const participation = this.repo.getParticipation(teamId, slot.index);
+    if (!participation || participation.state !== 'in_progress') return;
+    if (slot.kind === 'premium') {
+      const premium = this.repo.getPremiumState(questionId);
+      if (premium?.activeTeamId !== teamId) return;
+    }
+    this.repo.setStagedSubmission(teamId, slot.index, submission ?? null);
+  }
 
   async submitAnswer(
     teamId: string,
@@ -899,6 +945,7 @@ export class GameEngine {
       submission: extra.submission,
     });
     this.repo.setParticipation(teamId, slot.index, question.id, 'resolved');
+    this.repo.setStagedSubmission(teamId, slot.index, null);
 
     this.applyCapital(
       team,
@@ -1095,7 +1142,8 @@ export class GameEngine {
     if (!premium || premium.stage === 'closed') return;
     this.audit('PREMIUM_WINDOW_EXPIRED', { questionId, slotIndex: premium.slotIndex });
     if (premium.activeTeamId && (premium.stage === 'attempt_1' || premium.stage === 'attempt_2')) {
-      this.resolvePremiumAttempt(questionId, 'timeout', 'Premium window expired');
+      // Honour a staged answer even when the whole premium window runs out.
+      void this.expirePremiumAttempt(questionId);
       return;
     }
     this.closePremium(premium.outcome ?? 'no_takers');
@@ -1175,7 +1223,9 @@ export class GameEngine {
       auctionOpen: open,
       isCurrentLeader: auction.currentLeaderTeamId === teamId,
       teamActive: team.status === 'active',
-      enforceIncrement: amount === undefined,
+      // Every bid must land on the fixed ladder (200, 300, 400, ...) - the server
+      // rejects any arbitrary amount, whoever sent it (spec sections 3, 11, 18).
+      enforceIncrement: true,
     });
 
     const sequence = this.repo.nextBidSequence(auction.id);
@@ -1334,128 +1384,15 @@ export class GameEngine {
     );
     this.emit('PREMIUM_UNLOCKED', { premium, teamId: winner, risk: amount }, ALL);
 
-    // The winner now has a fixed window to TAKE the question or SIT OUT
-    // (spec sections 6, 7) before it becomes active.
-    this.enterPremiumDecision(auction.questionId, winner, amount);
-    return view;
-  }
-
-  /**
-   * Open the 15-second TAKE / SIT-OUT window for the team that won a premium
-   * (spec sections 6, 7). The server owns the deadline; the question only
-   * becomes active when the window resolves, so every taking team starts from
-   * one authoritative moment.
-   */
-  private enterPremiumDecision(questionId: string, winnerId: string, risk: number): void {
-    const slot = this.currentSlot();
-    const premium = this.repo.getPremiumState(questionId);
-    if (!slot || !premium) return;
-
-    const seconds = Math.max(1, this.config.takeDecisionSeconds);
-    const deadline = this.now() + seconds * 1000;
-    premium.stage = 'decision';
-    premium.decisionDeadline = deadline;
-    premium.decisions = {};
-    this.repo.savePremiumState(premium);
-
-    this.setPhase('premium_decision');
+    // The highest bidder MUST attempt the premium - they bid for it, so there is
+    // no TAKE / SIT-OUT choice for the winner (spec section 8). The question is
+    // authorised for them and the operator opens the attempt. Only the SECOND
+    // bidder gets a take/sit-out choice, and only if the winner fails (spec 9).
+    this.setPhase('premium_authorized');
     this.setProjectorMode('auto');
-    this.setTimer(`decision:${questionId}`, seconds * 1000, () =>
-      this.resolvePremiumDecisions(questionId),
-    );
-
-    this.audit('PREMIUM_DECISION_WINDOW', {
-      teamId: winnerId,
-      questionId,
-      slotIndex: slot.index,
-      metadata: { risk, deadline },
-    });
-    this.emit(
-      'PREMIUM_DECISION_WINDOW',
-      { premium, deadline, eligibleTeamIds: [winnerId] },
-      ALL,
-    );
     this.broadcastAllTeamViews();
     this.broadcastLiveEvents();
-  }
-
-  /** The set of teams entitled to TAKE/SIT-OUT this premium (the winner). */
-  private eligibleDeciders(premium: PremiumState): string[] {
-    return premium.activeTeamId ? [premium.activeTeamId] : [];
-  }
-
-  /**
-   * A team records its TAKE or SIT-OUT choice. Server-authoritative: only an
-   * eligible team, only while the window is open, only before the deadline.
-   */
-  submitPremiumDecision(teamId: string, take: boolean): void {
-    const slot = this.currentSlot();
-    if (!slot) throw new EngineError('no_premium', 'No premium is open');
-    const premium = this.repo.getPremiumState(slot.questionId);
-    if (!premium || premium.stage !== 'decision') {
-      throw new EngineError('no_decision', 'The take/sit-out window is not open');
-    }
-    if (!this.eligibleDeciders(premium).includes(teamId)) {
-      throw new EngineError('not_eligible', 'Your team cannot take this premium');
-    }
-    if (premium.decisionDeadline !== null && this.now() > premium.decisionDeadline) {
-      throw new EngineError('decision_closed', 'The take/sit-out window has closed');
-    }
-
-    const decision: PremiumDecision = take ? 'take' : 'sit_out';
-    premium.decisions = { ...premium.decisions, [teamId]: decision };
-    this.repo.savePremiumState(premium);
-
-    this.audit('PREMIUM_DECISION', {
-      teamId,
-      questionId: slot.questionId,
-      slotIndex: slot.index,
-      metadata: { decision },
-    });
-    this.emit('PREMIUM_DECISION_MADE', { premium, teamId, decision }, ALL);
-    this.broadcastAllTeamViews();
-    this.broadcastLiveEvents();
-
-    // Resolve early once every eligible team has chosen - no dead time.
-    const eligible = this.eligibleDeciders(premium);
-    if (eligible.every((id) => premium.decisions[id] !== undefined)) {
-      this.resolvePremiumDecisions(slot.questionId);
-    }
-  }
-
-  /**
-   * Close the decision window and start the question. Any eligible team that
-   * never chose defaults to SIT OUT (spec section 7). A taking team begins the
-   * attempt; if nobody takes, the premium closes undecided.
-   */
-  private resolvePremiumDecisions(questionId: string): void {
-    const slot = this.currentSlot();
-    const premium = this.repo.getPremiumState(questionId);
-    if (!slot || !premium || premium.stage !== 'decision') return;
-
-    this.clearTimer(`decision:${questionId}`);
-    premium.decisionDeadline = null;
-    this.repo.savePremiumState(premium);
-
-    const winnerId = premium.activeTeamId;
-    const took = winnerId ? premium.decisions[winnerId] === 'take' : false;
-
-    if (took) {
-      // Synchronised start: startPremiumAttempt is the single authoritative
-      // moment the question becomes active for every taking team.
-      this.startPremiumAttempt();
-      return;
-    }
-
-    // Winner sat out (or let the window lapse -> default SIT OUT). The premium
-    // closes with no attempt; no capital is risked because none was taken.
-    this.audit('PREMIUM_DECLINED', {
-      teamId: winnerId,
-      questionId,
-      slotIndex: slot.index,
-      metadata: { reason: winnerId && premium.decisions[winnerId] ? 'sit_out' : 'no_response' },
-    });
-    this.closePremium('no_takers');
+    return view;
   }
 
   cancelAuction(): void {
@@ -1568,7 +1505,7 @@ export class GameEngine {
     this.setTimer(
       `premium:${slot.questionId}`,
       solveSeconds * 1000 + this.config.submissionGraceMs,
-      () => this.expirePremiumAttempt(slot.questionId),
+      () => void this.expirePremiumAttempt(slot.questionId),
     );
     this.repo.saveGameState({
       timer: { endsAt, duration: solveSeconds, label: 'PREMIUM' },
@@ -1594,11 +1531,28 @@ export class GameEngine {
     this.broadcastLiveEvents();
   }
 
-  private expirePremiumAttempt(questionId: string): void {
+  private async expirePremiumAttempt(questionId: string): Promise<void> {
     const premium = this.repo.getPremiumState(questionId);
     if (!premium || (premium.stage !== 'attempt_1' && premium.stage !== 'attempt_2')) return;
-    if (!premium.activeTeamId) return;
-    if (this.repo.hasAttempt(premium.activeTeamId, premium.slotIndex)) return;
+    const teamId = premium.activeTeamId;
+    if (!teamId) return;
+    if (this.repo.hasAttempt(teamId, premium.slotIndex)) return;
+
+    // Auto-submit the attempter's selected-but-unsent answer (spec section 1).
+    const question = this.repo.getQuestion(questionId);
+    const participation = this.repo.getParticipation(teamId, premium.slotIndex);
+    const staged = participation?.stagedSubmission ?? null;
+    if (question && staged) {
+      const outcome = await this.evaluate(question, staged);
+      if (this.repo.hasAttempt(teamId, premium.slotIndex)) return;
+      this.resolvePremiumAttempt(
+        questionId,
+        outcome.correct ? 'correct' : 'wrong',
+        outcome.detail,
+        staged,
+      );
+      return;
+    }
     this.resolvePremiumAttempt(questionId, 'timeout', 'Time expired');
   }
 
@@ -1641,6 +1595,7 @@ export class GameEngine {
       submission,
     });
     this.repo.setParticipation(teamId, slot.index, questionId, 'resolved');
+    this.repo.setStagedSubmission(teamId, slot.index, null);
 
     this.applyCapital(
       team,
@@ -1707,13 +1662,19 @@ export class GameEngine {
       throw new EngineError('max_attempts', 'This premium has used both attempts');
     }
 
-    const candidate = teamId
-      ? premium.ladder.find((e) => e.teamId === teamId && e.state === 'pending')
-      : nextCandidate(premium.ladder);
-    if (!candidate) {
+    // The reclaim can ONLY ever go to the second bidder - rank 2 in the original
+    // auction ladder (spec section 7). A third or lower bidder is never offered,
+    // so any explicit teamId must be exactly that second bidder.
+    const second = premium.ladder.find((e) => e.rank === 2) ?? null;
+    if (teamId && (!second || teamId !== second.teamId)) {
+      throw new EngineError('not_second_bidder', 'Only the second bidder may be offered the reclaim');
+    }
+    if (!second || second.state !== 'pending') {
+      // No second bidder, or they have already had their chance: nothing to do.
       this.closePremium('no_takers');
       return;
     }
+    const candidate = second;
 
     const deadline = this.now() + this.config.reclaimDecisionWindow * 1000;
     premium.stage = 'reclaim_offer';
@@ -1810,21 +1771,22 @@ export class GameEngine {
     premium.offerDeadline = null;
     this.repo.savePremiumState(premium);
 
-    const next = nextCandidate(premium.ladder);
+    // Only the winner and the second bidder ever get the premium (spec section 7).
+    // When the second bidder sits out (declines, or lets the 15s window lapse),
+    // the premium closes - it is NEVER passed down to a third bidder.
     this.audit('PREMIUM_RECLAIM_DECLINED', {
       teamId,
       questionId: slot.questionId,
       slotIndex: slot.index,
-      metadata: { expired, next: next?.teamId ?? null },
+      metadata: { expired, next: null },
     });
     this.emit(
       'PREMIUM_RECLAIM_DECLINED',
-      { premium, teamId, expired, nextTeamId: next?.teamId ?? null },
+      { premium, teamId, expired, nextTeamId: null },
       ALL,
     );
 
-    if (next) this.offerReclaim(next.teamId);
-    else this.closePremium('no_takers');
+    this.closePremium('no_takers');
   }
 
   closePremium(outcome: PremiumState['outcome'] = null): void {
@@ -1978,15 +1940,11 @@ export class GameEngine {
     }
     if (key.startsWith('deadline:')) {
       const [, teamId, slotIndex] = key.split(':');
-      if (teamId && slotIndex) this.expireTeamQuestion(teamId, Number(slotIndex));
+      if (teamId && slotIndex) void this.expireTeamQuestion(teamId, Number(slotIndex));
       return true;
     }
     if (key.startsWith('reclaim:')) {
       this.expireReclaim(key.slice('reclaim:'.length));
-      return true;
-    }
-    if (key.startsWith('decision:')) {
-      this.resolvePremiumDecisions(key.slice('decision:'.length));
       return true;
     }
     if (key.startsWith('question_decision:')) {
@@ -1994,7 +1952,7 @@ export class GameEngine {
       return true;
     }
     if (key.startsWith('premium:')) {
-      this.expirePremiumAttempt(key.slice('premium:'.length));
+      void this.expirePremiumAttempt(key.slice('premium:'.length));
       return true;
     }
     if (key.startsWith('window:')) {
@@ -2238,8 +2196,11 @@ export class GameEngine {
       // team resumes the time it actually has left rather than a fresh one.
       const question = this.repo.getQuestion(slot.questionId);
       if (participation?.state === 'in_progress' && participation.joinedAt && question) {
-        questionDeadline =
-          participation.joinedAt + question.timeLimit * 1000 + this.config.submissionGraceMs;
+        // The clock the client shows ends at the true time limit. The server's
+        // hard deadline adds submissionGraceMs on top, so the client's own
+        // auto-submit at zero (spec section 1) lands comfortably inside the grace
+        // window rather than racing the server's expiry.
+        questionDeadline = participation.joinedAt + question.timeLimit * 1000;
       }
       if (slot.kind === 'premium') {
         questionState =

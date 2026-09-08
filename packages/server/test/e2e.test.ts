@@ -326,10 +326,10 @@ describe('premium over the LAN', () => {
   }, 30_000);
 
   it('runs the auction and authorises exactly one team', async () => {
-    // Drain T08 so its purse cannot reach the bidding (full-purse eligibility).
+    // Drain T08 so its purse cannot reach the bidding (reserve-based eligibility).
     await organizer.call('ADJUST_CAPITAL', { teamId: 'T08', amount: -1400, reason: 'drain' });
     await organizer.call('START_AUCTION', {});
-    // Teams enter their own amounts; highest wins.
+    // The organizer clicks a team's amount; each bid climbs by ₹100.
     await organizer.call('PLACE_BID', { teamId: 'T03', amount: 300 });
     await organizer.call('PLACE_BID', { teamId: 'T02', amount: 400 });
     await organizer.call('PLACE_BID', { teamId: 'T01', amount: 500 });
@@ -352,18 +352,16 @@ describe('premium over the LAN', () => {
       teamId: 'T01',
       risk: 500,
     });
-    // And the winner is invited to TAKE or SIT OUT (spec 6, 7).
-    expect((await winner.wait((f) => f.t === 'PREMIUM_DECISION_WINDOW')).d).toMatchObject({
-      eligibleTeamIds: ['T01'],
-    });
+    // The winning bidder is authorised and MUST attempt - no sit-out (spec 8).
+    expect(app.engine.gameState().phase).toBe('premium_authorized');
   }, 30_000);
 
   it('reveals the premium body only to the winner, then settles the reclaim', async () => {
     const question = currentQuestion();
     const winner = players.get('T01')!;
     winner.clear();
-    // The winner TAKES the premium; taking starts the attempt (spec 6, 7).
-    await winner.call('PREMIUM_DECISION', { take: true });
+    // The operator opens the winner's attempt (the winner cannot sit out).
+    await organizer.call('START_PREMIUM_ATTEMPT', {});
 
     const revealed = await winner.wait(
       (f) => f.t === 'QUESTION_OPENED' && (f.d as { question: { revealed: boolean } }).question.revealed,

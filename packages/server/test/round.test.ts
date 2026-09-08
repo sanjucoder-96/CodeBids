@@ -155,7 +155,7 @@ describe('state machine (spec 19)', () => {
     expect(intro?.question.timeLimit).toBeGreaterThan(0);
   });
 
-  it('walks premium_intro -> auction_active -> premium_decision -> premium_solving', () => {
+  it('walks premium_intro -> auction_active -> premium_authorized -> premium_solving', () => {
     startRound(h);
     const slot = advanceTo(h, (s) => s.kind === 'premium');
     expect(h.engine.gameState().phase).toBe('premium_intro');
@@ -165,11 +165,11 @@ describe('state machine (spec 19)', () => {
 
     h.engine.placeBid('T01');
     h.engine.closeAuction();
-    // A win opens the 15-second TAKE / SIT-OUT window (spec 6, 7).
-    expect(h.engine.gameState().phase).toBe('premium_decision');
+    // The winning bidder MUST attempt - no sit-out for the winner (spec 8).
+    expect(h.engine.gameState().phase).toBe('premium_authorized');
 
-    // Taking it starts the attempt from one authoritative moment.
-    h.engine.submitPremiumDecision('T01', true);
+    // The operator opens the attempt.
+    h.engine.startPremiumAttempt();
     expect(h.engine.gameState().phase).toBe('premium_solving');
     void slot;
   });
@@ -203,7 +203,7 @@ describe('premium preview hides the question (spec 5)', () => {
     advanceTo(h, (s) => s.kind === 'premium');
 
     const intro = h.lastEvent<{ preview: Record<string, unknown> }>('PREMIUM_INTRO');
-    expect(intro?.preview).toMatchObject({ startingBid: 200, increment: 1 });
+    expect(intro?.preview).toMatchObject({ startingBid: 200, increment: 100 });
     expect(intro?.preview.domain).toBeTruthy();
     expect(intro?.preview.difficulty).toBeTruthy();
     expect(intro?.preview.timeLimit).toBeGreaterThan(0);

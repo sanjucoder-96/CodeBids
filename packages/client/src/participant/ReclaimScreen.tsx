@@ -73,16 +73,17 @@ export function ReclaimScreen() {
           <span aria-hidden="true">
             <AlertIcon size={18} />
           </span>
-          PREMIUM RECLAIM
+          TAKE OR SIT OUT
         </div>
 
         {failed ? (
           <p className="reclaim__context">
-            <span className="mono">{failed}</span> failed. You were the next highest original bidder.
+            <span className="mono">{failed}</span> failed. You were the second-highest bidder, so the
+            question is offered to you — and to you alone.
           </p>
         ) : null}
 
-        <h2 className="reclaim__title">The question is yours if you want it</h2>
+        <h2 className="reclaim__title">Take the question, or sit out?</h2>
 
         <div className="reclaim__risk">
           <span className="label">Your original bid becomes your risk</span>
@@ -116,7 +117,7 @@ export function ReclaimScreen() {
             />
           </div>
           <p className="dim" style={{ fontSize: 'var(--fs-xs)' }}>
-            No answer counts as a decline and the offer moves on.
+            No choice before the timer ends counts as sitting out, and the premium closes.
           </p>
         </div>
 
@@ -126,7 +127,7 @@ export function ReclaimScreen() {
             onClick={() => respond(false)}
             disabled={busy}
           >
-            Decline
+            Sit out
           </button>
           <button
             className="btn btn--premium btn--xl"
@@ -135,7 +136,7 @@ export function ReclaimScreen() {
             autoFocus
           >
             {busy ? <span className="spinner" /> : null}
-            Accept the risk
+            Take it
           </button>
         </div>
       </motion.div>

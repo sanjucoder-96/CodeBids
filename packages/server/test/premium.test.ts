@@ -35,18 +35,18 @@ beforeEach(() => {
 afterEach(() => h.close());
 
 describe('auction mechanics (spec 7, 9)', () => {
-  it('opens at the ₹200 minimum and accepts higher free-form bids', () => {
+  it('opens at the ₹200 minimum and climbs in ₹100 steps', () => {
     openPremium();
     const view = h.engine.startAuction();
     expect(view.auction.startingBid).toBe(200);
     expect(view.nextBid).toBe(200);
 
-    // A team enters its own amount; it must be at least the minimum.
     expect(h.engine.placeBid('T01', 200).accepted).toBe(true);
     expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(200);
-    // The next team must beat the current bid by any amount.
-    expect(h.engine.placeBid('T02', 350).accepted).toBe(true);
-    expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(350);
+    // The next bid must land exactly one ₹100 increment higher.
+    expect(h.engine.placeBid('T02', 250).accepted).toBe(false);
+    expect(h.engine.placeBid('T02', 300).accepted).toBe(true);
+    expect(h.engine.currentAuctionView()?.auction.currentBid).toBe(300);
   });
 
   it('rejects an opening bid below the ₹200 minimum', () => {
@@ -57,17 +57,16 @@ describe('auction mechanics (spec 7, 9)', () => {
     expect(low.message).toMatch(/at least 200/);
   });
 
-  it('lets a team bid up to its whole purse, and no further (spec 4)', () => {
+  it('caps a bid at purse minus the ₹500 reserve (spec 4)', () => {
     startRound(h, 6);
     advanceTo(h, (s) => s.kind === 'premium');
     h.engine.startAuction();
-    // Every team starts on ₹1,500 with no protected reserve: the ceiling is
-    // the full purse. ₹1,500 is valid, ₹1,501 is not.
-    expect(h.engine.placeBid('T01', 1400).accepted).toBe(true);
-    expect(h.engine.placeBid('T02', 1500).accepted).toBe(true);
-    const over = h.engine.placeBid('T01', 1501);
+    // ₹1,500 purse − ₹500 protected reserve ⇒ a ₹1,000 ceiling.
+    expect(h.engine.placeBid('T01', 1100).accepted).toBe(false);
+    expect(h.engine.placeBid('T02', 1000).accepted).toBe(true);
+    const over = h.engine.placeBid('T01', 1100);
     expect(over.accepted).toBe(false);
-    expect(over.message).toMatch(/1500/);
+    expect(over.message).toMatch(/1000/);
   });
 
   it('lets a richer team bid higher', () => {
@@ -89,7 +88,8 @@ describe('auction mechanics (spec 7, 9)', () => {
     openPremium();
     h.engine.startAuction();
     h.engine.placeBid('T01', 300);
-    h.engine.placeBid('T02', 99_999);
+    // On the ladder (min 400) but beyond T02's ceiling.
+    h.engine.placeBid('T02', 2400);
     const auctionId = h.engine.currentAuctionView()?.auction.id as number;
     const all = h.repo.listBids(auctionId, false);
     expect(all).toHaveLength(2);
@@ -228,14 +228,14 @@ describe('reclaim (spec 8)', () => {
     expect(h.repo.listAuctions()).toHaveLength(1);
   });
 
-  it('walks down the ladder on a decline', async () => {
+  it('closes the premium when the second bidder declines - never a third bidder (spec 7)', async () => {
     await ladderAuction();
     h.clearEvents();
     h.engine.resolveReclaim('T05', false);
-    expect(h.lastEvent<{ teamId: string; risk: number }>('PREMIUM_RECLAIM_OFFERED')).toMatchObject({
-      teamId: 'T04',
-      risk: 400,
-    });
+    expect(h.engine.currentPremium()?.stage).toBe('closed');
+    expect(h.engine.currentPremium()?.outcome).toBe('no_takers');
+    // No further reclaim offer is ever made.
+    expect(h.lastEvent('PREMIUM_RECLAIM_OFFERED')).toBeUndefined();
   });
 
   it('settles attempt 2 against the reclaim team own bid', async () => {
@@ -263,24 +263,23 @@ describe('reclaim (spec 8)', () => {
     expect(() => h.engine.offerReclaim('T04')).toThrow(/both attempts/);
   });
 
-  it('closes when every candidate declines, and declining is free', async () => {
+  it('closes with no takers when the second bidder declines, and declining is free', async () => {
     await ladderAuction();
     const before = capital(h, 'T05');
     h.engine.resolveReclaim('T05', false);
-    h.engine.resolveReclaim('T04', false);
-    h.engine.resolveReclaim('T03', false);
 
     expect(h.engine.currentPremium()?.outcome).toBe('no_takers');
     expect(capital(h, 'T05')).toBe(before);
   });
 
-  it('auto-declines when the decision window lapses', async () => {
+  it('auto-closes when the 15s decision window lapses, with no third bidder', async () => {
     await ladderAuction();
     h.clearEvents();
     expect(h.engine.fireTimer(`reclaim:${question.id}`)).toBe(true);
-    expect(h.lastEvent<{ expired: boolean; nextTeamId: string }>('PREMIUM_RECLAIM_DECLINED')).toMatchObject(
-      { expired: true, nextTeamId: 'T04' },
-    );
+    expect(
+      h.lastEvent<{ expired: boolean; nextTeamId: string | null }>('PREMIUM_RECLAIM_DECLINED'),
+    ).toMatchObject({ expired: true, nextTeamId: null });
+    expect(h.engine.currentPremium()?.stage).toBe('closed');
   });
 
   it('rejects a response from the wrong team', async () => {

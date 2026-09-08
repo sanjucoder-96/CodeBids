@@ -1546,7 +1546,7 @@ kbd {
 
 .team-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   gap: var(--sp-2);
   padding: var(--sp-5);
 }
@@ -1622,6 +1622,49 @@ kbd {
   left: 5px;
   font-size: 10px;
   color: var(--warn);
+}
+
+.team-tile__name {
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-tile__purse {
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+}
+
+.team-tile:hover:not(:disabled) .team-tile__purse,
+.team-tile:hover:not(:disabled) .team-tile__name {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.team-tile__status {
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: rgba(46, 204, 113, 0.16);
+  color: var(--gain, #2ecc71);
+}
+
+.team-tile__status[data-eligible='false'] {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+}
+
+.team-tile__status[data-leader='true'] {
+  background: var(--premium-dim);
+  color: var(--premium);
 }
 
 .auction-ctl__actions {

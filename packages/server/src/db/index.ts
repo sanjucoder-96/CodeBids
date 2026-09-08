@@ -35,7 +35,7 @@ export interface OpenOptions {
  * otherwise survive with the wrong columns and fail at the first query
  * ("no such column: slot_index"). Round 2 -> Round 3 was exactly that break.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /** True when the file already holds tables from a different schema version. */
 function isStaleSchema(db: DB): boolean {
