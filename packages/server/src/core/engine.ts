@@ -713,6 +713,16 @@ export class GameEngine {
       if (this.config.requireAccessKey && participation?.state !== 'available') {
         throw new EngineError('locked', 'Enter the question key first');
       }
+      // A team must be able to cover what it risks: a wrong answer (or a
+      // timeout) costs the question's penalty, so a team whose capital is below
+      // that penalty cannot afford to take the question.
+      const penalty = calcPenalty(this.config, question, team.capital);
+      if (penalty > 0 && team.capital < penalty) {
+        throw new EngineError(
+          'insufficient_capital',
+          `You need at least ${penalty} to take this question (a wrong answer costs ${penalty}).`,
+        );
+      }
     }
     if (participation?.state === 'in_progress') return; // idempotent re-join
 

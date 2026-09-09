@@ -15,7 +15,7 @@ import {
   startRound,
   type Harness,
 } from './helpers.js';
-import type { Question } from '@code-market/shared';
+import { questionPenalty, type Question } from '@code-market/shared';
 
 let h: Harness;
 
@@ -653,5 +653,27 @@ describe('normal-question TAKE / SIT-OUT window (spec 6, 7)', () => {
     // T01 keeps its own solve clock; the decision window does not end its attempt.
     expect(h.engine.teamView('T01')?.questionState).toBe('in_progress');
     expect(h.engine.teamView('T01')?.questionDeadline).toBe(deadline);
+  });
+});
+
+describe('cannot take a question you cannot afford to lose', () => {
+  it('blocks a team whose capital is below the question penalty, and allows one that can cover it', () => {
+    startRound(h, 3);
+    const { question } = openFirstQuestion(h);
+    // The penalty is fixed by difficulty (100-250) and independent of capital.
+    const penalty = questionPenalty(h.engine.getConfig(), question, 0);
+    expect(penalty).toBeGreaterThan(0);
+
+    // Drain T01 below the penalty: it must not be able to take the question.
+    h.engine.adjustCapital('T01', penalty - 1 - capital(h, 'T01'), 'test: below penalty');
+    expect(capital(h, 'T01')).toBe(penalty - 1);
+    expect(() => h.engine.joinQuestion('T01', question.id)).toThrow(/at least|capital/i);
+    expect(h.engine.teamView('T01')?.questionState).not.toBe('in_progress');
+
+    // Exactly the penalty is enough to take it.
+    h.engine.adjustCapital('T02', penalty - capital(h, 'T02'), 'test: exactly penalty');
+    expect(capital(h, 'T02')).toBe(penalty);
+    expect(() => h.engine.joinQuestion('T02', question.id)).not.toThrow();
+    expect(h.engine.teamView('T02')?.questionState).toBe('in_progress');
   });
 });

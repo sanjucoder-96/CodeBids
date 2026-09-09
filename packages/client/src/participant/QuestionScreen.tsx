@@ -34,6 +34,10 @@ export function QuestionScreen() {
   const unlocked = me.questionState === 'available';
   const skipped = me.questionState === 'skipped';
   const symbol = config.currencySymbol;
+  // A wrong answer costs the penalty, so a team must be able to cover it to take
+  // the question. The server enforces this too; this just keeps the button honest.
+  const penalty = question.penalty ?? 0;
+  const canAfford = penalty === 0 || me.capital >= penalty;
 
   async function unlock(event: FormEvent) {
     event.preventDefault();
@@ -211,9 +215,11 @@ export function QuestionScreen() {
               <div className="q-card__decision-copy">
                 <h3 className="q-card__decision-title">Commit to this question?</h3>
                 <p className="muted">
-                  {config.questionOptIn
-                    ? 'Joining starts your clock and reveals the question. Sitting out costs nothing.'
-                    : 'Start the question when you are ready.'}
+                  {!canAfford
+                    ? `You need at least ${money(penalty, symbol)} to take this question — a wrong answer costs ${money(penalty, symbol)}, and your capital is ${money(me.capital, symbol)}.`
+                    : config.questionOptIn
+                      ? 'Joining starts your clock and reveals the question. Sitting out costs nothing.'
+                      : 'Start the question when you are ready.'}
                 </p>
               </div>
               <div className="q-card__actions">
@@ -222,7 +228,13 @@ export function QuestionScreen() {
                     Sit out
                   </button>
                 ) : null}
-                <button className="btn btn--gain btn--xl" onClick={join} disabled={busy} autoFocus>
+                <button
+                  className="btn btn--gain btn--xl"
+                  onClick={join}
+                  disabled={busy || !canAfford}
+                  autoFocus={canAfford}
+                  title={canAfford ? undefined : `Not enough capital — you need at least ${money(penalty, symbol)}`}
+                >
                   Take it on
                 </button>
               </div>
