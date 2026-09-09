@@ -424,6 +424,22 @@ export class Repo {
       );
   }
 
+  /**
+   * Drop every question whose id is NOT in `keepIds`, so the seeded pool is
+   * authoritative and a leftover entry from a previous bank can never be drawn.
+   * Foreign keys cascade (game_sequence, auctions, premium_states, bids), so a
+   * stale round built on a removed question is cleared with it. Returns how many
+   * questions were removed.
+   */
+  pruneQuestionsExcept(keepIds: string[]): number {
+    if (keepIds.length === 0) return 0;
+    const placeholders = keepIds.map(() => '?').join(', ');
+    const result = this.db
+      .prepare(`DELETE FROM questions WHERE id NOT IN (${placeholders})`)
+      .run(...keepIds);
+    return result.changes;
+  }
+
   getAccessKeyHash(questionId: string): string | null {
     const row = this.db
       .prepare('SELECT access_key_hash FROM questions WHERE id = ?')

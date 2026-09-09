@@ -1,6 +1,11 @@
 /**
  * The question POOL (spec sections 1, 4, 22).
  *
+ * FINAL Round 3 organizer bank: 32 questions (26 normal + 6 premium), approved
+ * across passes 1-3. Scope is C, Python, data structures in C (linked lists,
+ * stacks & queues, graphs / BFS / DFS, trees, heap terminology), introductory
+ * DBMS/SQL and limited Java/OOP.
+ *
  * This is NOT the running order. The server draws a concrete sequence from this
  * pool at game start: three RANDOM normal questions, then a premium, repeated.
  * There is deliberately no difficulty ramp - any tier can appear anywhere.
@@ -8,6 +13,7 @@
  * Every question carries its own domain, difficulty and (derived) solve time.
  * Solve times come from config by difficulty:
  *   easy 60s · medium 90s · hard 120s · very hard 150s
+ * The approved bank uses only medium (90s), hard (120s) and very hard (150s).
  *
  * `evaluation` never reaches a participant: the server strips it.
  */
@@ -35,852 +41,846 @@ const draft = (d: Draft): Question => ({
   timeLimit: d.timeLimit ?? DEFAULT_DIFFICULTY_TIMES[d.difficulty],
 });
 
+/* ------------------------------------------------------------------ *
+ * Accepted-answer helpers.
+ *
+ * Text answers are auto-graded after whitespace is collapsed and case is
+ * ignored (see evaluation.ts). These helpers list the ways a team might
+ * reasonably type a sequence / linked-list / literal so a correct answer is
+ * not marked wrong over a comma-vs-arrow choice.
+ * ------------------------------------------------------------------ */
+
+/** Sequence / linked-list variants (arrow, ASCII arrow, space, comma). */
+function nodeForms(nodes: (number | string)[], withNull: boolean): string[] {
+  const s = nodes.map(String);
+  const forms = [
+    s.join(' → '),
+    s.join(' -> '),
+    s.join(' '),
+    s.join(', '),
+    s.join(','),
+  ];
+  if (withNull) {
+    forms.push(`${s.join(' → ')} → NULL`, `${s.join(' -> ')} -> NULL`, `${s.join(' ')} NULL`);
+  }
+  return Array.from(new Set(forms));
+}
+
+/** Space-separated output that should also accept comma separators. */
+function spacedForms(tokens: (number | string)[]): string[] {
+  const s = tokens.map(String);
+  return Array.from(new Set([s.join(' '), s.join(', '), s.join(',')]));
+}
+
+/** Literal output (Python repr). Accepts the canonical form, a
+ *  whitespace-stripped form, and - for multi-line output - a single-line join. */
+function literalForms(...lines: string[]): string[] {
+  const tight = lines.map((l) => l.replace(/ /g, ''));
+  const forms = new Set<string>();
+  forms.add(lines.join('\n'));
+  forms.add(tight.join('\n'));
+  forms.add(lines.join(' '));
+  forms.add(tight.join(''));
+  forms.add(lines.join(''));
+  return [...forms];
+}
+
 /* ==================================================================== *
- * NORMAL QUESTIONS
+ * NORMAL QUESTIONS (26)
  * ==================================================================== */
 
 const NORMAL: Draft[] = [
-  /* ---------------------------------------------------------- EASY */
   {
-    id: 'N01',
+    id: 'Q01',
     kind: 'normal',
-    title: 'Slice of Life',
-    domain: 'output_prediction',
+    title: 'C — Pointer Aliasing',
+    domain: 'code_analysis',
     type: 'output',
-    difficulty: 'easy',
-    accessKey: 'Q-4417',
+    difficulty: 'medium',
+    accessKey: 'Q-7413',
     question: {
       prompt: 'Read the program and type EXACTLY what it prints.',
-      code: `a = [1, 2, 3, 4, 5]
-b = a[1:4]
-b[0] = 99
-print(a[1], b[0], len(b))`,
-      codeLanguage: 'python',
-      placeholder: 'e.g. 1 2 3',
-      hint: 'Python slicing copies.',
-    },
-    evaluation: {
-      acceptedAnswers: ['2 99 3'],
-      explanation:
-        'Slicing builds a NEW list, so mutating b never touches a. a[1] is still 2, b[0] is 99, and the slice has 3 elements.',
-    },
-  },
-  {
-    id: 'N02',
-    kind: 'normal',
-    title: 'Normal Form Notice',
-    domain: 'databases',
-    type: 'true_false',
-    difficulty: 'easy',
-    accessKey: 'Q-9925',
-    question: {
-      prompt:
-        'TRUE or FALSE: A relation in BCNF is always in 3NF, but a relation in 3NF is not necessarily in BCNF.',
-    },
-    evaluation: {
-      correctBoolean: true,
-      explanation:
-        'BCNF is strictly stronger than 3NF. Every BCNF relation satisfies 3NF; the reverse fails when a non-trivial dependency has a non-superkey determinant.',
-    },
-  },
-  {
-    id: 'N03',
-    kind: 'normal',
-    title: 'Big O Basics',
-    domain: 'algorithms',
-    type: 'mcq',
-    difficulty: 'easy',
-    accessKey: 'Q-2210',
-    question: {
-      prompt: 'What is the time complexity of searching a balanced binary search tree with n nodes?',
-      options: [
-        { id: 'a', text: 'O(1)' },
-        { id: 'b', text: 'O(log n)' },
-        { id: 'c', text: 'O(n)' },
-        { id: 'd', text: 'O(n log n)' },
-      ],
-    },
-    evaluation: {
-      correctOptionIds: ['b'],
-      explanation: 'A balanced BST has height O(log n), and search descends one level at a time.',
-    },
-  },
-  {
-    id: 'N04',
-    kind: 'normal',
-    title: 'Status Report',
-    domain: 'networking',
-    type: 'matching',
-    difficulty: 'easy',
-    accessKey: 'Q-3081',
-    question: {
-      prompt: 'Match each HTTP status code to its meaning.',
-      left: [
-        { id: 'c200', text: '200' },
-        { id: 'c301', text: '301' },
-        { id: 'c404', text: '404' },
-        { id: 'c500', text: '500' },
-      ],
-      right: [
-        { id: 'ok', text: 'OK' },
-        { id: 'moved', text: 'Moved Permanently' },
-        { id: 'missing', text: 'Not Found' },
-        { id: 'server', text: 'Internal Server Error' },
-      ],
-    },
-    evaluation: {
-      correctPairs: { c200: 'ok', c301: 'moved', c404: 'missing', c500: 'server' },
-      explanation: '2xx success, 3xx redirection, 4xx client error, 5xx server error.',
-    },
-  },
-  {
-    id: 'N05',
-    kind: 'normal',
-    title: 'Stack Discipline',
-    domain: 'dsa',
-    type: 'mcq',
-    difficulty: 'easy',
-    accessKey: 'Q-5540',
-    question: {
-      prompt: 'Push 1,2,3 onto a stack, pop once, push 4, then pop everything. What is the pop order?',
-      options: [
-        { id: 'a', text: '3, 4, 2, 1' },
-        { id: 'b', text: '1, 2, 3, 4' },
-        { id: 'c', text: '3, 2, 1, 4' },
-        { id: 'd', text: '4, 2, 1' },
-      ],
-    },
-    evaluation: {
-      correctOptionIds: ['a'],
-      explanation:
-        'Push 1,2,3 gives top=3. Pop yields 3. Push 4 gives top=4. Popping the rest yields 4, then 2, then 1.',
-    },
-  },
-  {
-    id: 'N06',
-    kind: 'normal',
-    title: 'Truthy Business',
-    domain: 'output_prediction',
-    type: 'output',
-    difficulty: 'easy',
-    accessKey: 'Q-6612',
-    question: {
-      prompt: 'What does this print?',
-      code: `console.log([] + []);
-console.log(typeof (1 / "a"));`,
-      codeLanguage: 'javascript',
-      placeholder: 'two lines',
-      hint: 'The first line prints an empty string.',
-    },
-    evaluation: {
-      acceptedAnswers: ['\nnumber', 'number'],
-      ignoreWhitespace: true,
-      explanation:
-        '[] + [] coerces both arrays to "" and concatenates to an empty string. 1/"a" is NaN, whose typeof is "number".',
-    },
-  },
+      code: `int a[] = {10, 20, 30, 40};
+int *p = a + 1;
+int *q = p;
 
-  /* -------------------------------------------------------- MEDIUM */
-  {
-    id: 'N07',
-    kind: 'normal',
-    title: 'Query Floor',
-    domain: 'sql',
-    type: 'mcq',
-    difficulty: 'medium',
-    accessKey: 'Q-2091',
-    question: {
-      prompt:
-        'Table trades(id, team, amount). Which query returns ONLY teams whose TOTAL traded amount exceeds 1000?',
-      code: `-- trades
---  1 | T01 |  600
---  2 | T01 |  500
---  3 | T02 |  900
---  4 | T03 | 1200`,
-      codeLanguage: 'sql',
-      options: [
-        { id: 'a', text: 'SELECT team FROM trades WHERE SUM(amount) > 1000 GROUP BY team;' },
-        { id: 'b', text: 'SELECT team FROM trades GROUP BY team HAVING SUM(amount) > 1000;' },
-        { id: 'c', text: 'SELECT team FROM trades GROUP BY team WHERE SUM(amount) > 1000;' },
-        { id: 'd', text: 'SELECT team, SUM(amount) FROM trades WHERE amount > 1000;' },
-      ],
+*p = *q + 5;
+q = &a[3];
+*q = *p - 3;
+
+printf("%d %d %d %d", a[0], a[1], a[2], a[3]);`,
+      codeLanguage: 'c',
+      placeholder: 'e.g. 10 20 30 40',
+      hint: 'p and q start as aliases of a[1].',
     },
     evaluation: {
-      correctOptionIds: ['b'],
+      acceptedAnswers: spacedForms([10, 25, 30, 22]),
       explanation:
-        'Aggregates are filtered with HAVING, after GROUP BY. WHERE runs before grouping and cannot reference SUM().',
+        'p and q both point at a[1]. *p = *q + 5 makes a[1] = 25. q is repointed to a[3]; *q = *p - 3 = 25 - 3 = 22, so a[3] = 22. a[0] and a[2] are untouched.',
     },
   },
   {
-    id: 'N08',
+    id: 'Q02',
     kind: 'normal',
-    title: 'Deadlock Desk',
-    domain: 'os',
-    type: 'multi',
+    title: 'Python — Shared References',
+    domain: 'code_analysis',
+    type: 'output',
     difficulty: 'medium',
-    accessKey: 'Q-7314',
+    accessKey: 'Q-2856',
     question: {
-      prompt: 'Select ALL four Coffman conditions required for deadlock.',
-      options: [
-        { id: 'a', text: 'Mutual exclusion' },
-        { id: 'b', text: 'Hold and wait' },
-        { id: 'c', text: 'Preemption of held resources' },
-        { id: 'd', text: 'No preemption' },
-        { id: 'e', text: 'Circular wait' },
-        { id: 'f', text: 'Priority inversion' },
-      ],
+      prompt: 'Read the program and type EXACTLY what it prints.',
+      code: `x = [1, 2]
+a = [x, x]
+a[0].append(3)
+a[1] = a[1] + [4]
+
+print(a)`,
+      codeLanguage: 'python',
+      placeholder: 'e.g. [[...], [...]]',
+      hint: 'a[0] and a[1] start as the SAME list object; rebinding a[1] breaks the alias.',
     },
     evaluation: {
-      correctOptionIds: ['a', 'b', 'd', 'e'],
+      acceptedAnswers: literalForms('[[1, 2, 3], [1, 2, 4]]'),
       explanation:
-        'Mutual exclusion, hold and wait, no preemption, circular wait. Preemption BREAKS deadlock; priority inversion is unrelated.',
+        'a[0] and a[1] are the same object x, so append(3) makes x = [1,2,3] seen through both. a[1] = a[1] + [4] rebinds a[1] to a NEW list [1,2,3,4], leaving a[0] as [1,2,3].',
     },
   },
   {
-    id: 'N09',
+    id: 'Q03',
     kind: 'normal',
-    title: 'Subnet Trading Floor',
-    domain: 'networking',
+    title: 'Stack — Expression',
+    domain: 'dsa',
     type: 'numeric',
     difficulty: 'medium',
-    accessKey: 'Q-5508',
+    accessKey: 'Q-3390',
     question: {
-      prompt:
-        'The event LAN uses 192.168.10.0/26. How many USABLE host addresses does this subnet provide?',
+      prompt: 'Evaluate the postfix expression:  5 2 3 * + 4 -.  What single value remains on the stack after complete evaluation?',
       placeholder: 'a whole number',
-      unit: 'hosts',
     },
     evaluation: {
-      correctNumber: 62,
-      tolerance: 0,
-      explanation: 'A /26 leaves 6 host bits: 2^6 = 64, minus network and broadcast = 62 usable.',
+      correctNumber: 7,
+      explanation: '3 * 2 = 6; 5 + 6 = 11; 11 - 4 = 7.',
     },
   },
   {
-    id: 'N10',
+    id: 'Q04',
     kind: 'normal',
-    title: 'Complexity Exchange',
+    title: 'Queue — Circular Index',
+    domain: 'dsa',
+    type: 'short_text',
+    difficulty: 'medium',
+    accessKey: 'Q-5127',
+    question: {
+      prompt:
+        'A circular queue of capacity 5 contains 20, 30, 40 (front to rear). Dequeue twice, then enqueue 50 and 60. Give the final front-to-rear sequence.',
+      placeholder: 'e.g. 40, 50, 60',
+    },
+    evaluation: {
+      acceptedAnswers: nodeForms([40, 50, 60], false),
+      explanation: 'Dequeue removes 20 then 30, leaving 40. Enqueue 50 and 60 gives front->rear 40, 50, 60.',
+    },
+  },
+  {
+    id: 'Q05',
+    kind: 'normal',
+    title: 'Linked List — Insert/Delete Trace',
+    domain: 'dsa',
+    type: 'short_text',
+    difficulty: 'medium',
+    accessKey: 'Q-6604',
+    question: {
+      prompt:
+        'Start: 10 → 20 → 40 → 50 → NULL. Insert 30 after 20, then delete node 40. Give the final list.',
+      placeholder: 'e.g. 10 -> 20 -> ... -> NULL',
+    },
+    evaluation: {
+      acceptedAnswers: nodeForms([10, 20, 30, 50], true),
+      explanation: 'Inserting 30 after 20 gives 10,20,30,40,50; deleting 40 gives 10 → 20 → 30 → 50 → NULL.',
+    },
+  },
+  {
+    id: 'Q07',
+    kind: 'normal',
+    title: 'Graphs — BFS',
     domain: 'algorithms',
+    type: 'ordering',
+    difficulty: 'medium',
+    accessKey: 'Q-4471',
+    question: {
+      prompt:
+        'Undirected graph: A:B,C; B:A,D,E; C:A,F; D:B; E:B,F; F:C,E. Starting at A and visiting neighbours in alphabetical order, arrange the nodes in BFS visiting order.',
+      items: [
+        { id: 'a', text: 'A' },
+        { id: 'b', text: 'B' },
+        { id: 'c', text: 'C' },
+        { id: 'd', text: 'D' },
+        { id: 'e', text: 'E' },
+        { id: 'f', text: 'F' },
+      ],
+    },
+    evaluation: {
+      correctOrder: ['a', 'b', 'c', 'd', 'e', 'f'],
+      explanation:
+        'A enqueues B,C. B enqueues D,E. C enqueues F. Level order is A, then B,C, then D,E, then F: A B C D E F.',
+    },
+  },
+  {
+    id: 'Q08',
+    kind: 'normal',
+    title: 'Heap — Terminology',
+    domain: 'dsa',
     type: 'mcq',
     difficulty: 'medium',
-    accessKey: 'Q-8823',
+    accessKey: 'Q-1195',
     question: {
-      prompt: 'What is the WORST-CASE time complexity of this function?',
-      code: `int mystery(vector<int>& v, int target) {
-    for (int i = 0; i < v.size(); i++) {
-        int lo = 0, hi = v.size() - 1;
-        while (lo <= hi) {
-            int mid = lo + (hi - lo) / 2;
-            if (v[mid] == target - v[i]) return mid;
-            if (v[mid] < target - v[i]) lo = mid + 1;
-            else hi = mid - 1;
-        }
-    }
-    return -1;
-}`,
-      codeLanguage: 'cpp',
+      prompt: 'In a MAX heap, which statement must be true?',
       options: [
-        { id: 'a', text: 'O(n)' },
-        { id: 'b', text: 'O(n log n)' },
-        { id: 'c', text: 'O(n^2)' },
-        { id: 'd', text: 'O(log n)' },
+        { id: 'a', text: 'Every leaf is smaller than every other node.' },
+        { id: 'b', text: 'Every parent is >= its children.' },
+        { id: 'c', text: 'The left child is always smaller than the right child.' },
+        { id: 'd', text: 'The root is always the smallest element.' },
       ],
     },
     evaluation: {
       correctOptionIds: ['b'],
-      explanation: 'An O(log n) binary search inside an O(n) loop gives O(n log n).',
+      explanation:
+        'The max-heap property is only about parent vs. child: every parent is >= its children. Sibling order and leaf comparisons are not constrained, and the root is the LARGEST element.',
     },
   },
   {
-    id: 'N11',
+    id: 'Q09',
     kind: 'normal',
-    title: 'Security Ledger',
-    domain: 'security',
-    type: 'matching',
-    difficulty: 'medium',
-    accessKey: 'Q-1287',
+    title: 'C — Recursion',
+    domain: 'code_analysis',
+    type: 'output',
+    difficulty: 'hard',
+    accessKey: 'Q-9037',
     question: {
-      prompt: 'Match each attack to the defence that most directly prevents it.',
-      left: [
-        { id: 'sqli', text: 'SQL injection' },
-        { id: 'xss', text: 'Stored XSS' },
-        { id: 'csrf', text: 'CSRF' },
-        { id: 'brute', text: 'Password brute force' },
-      ],
-      right: [
-        { id: 'params', text: 'Parameterised queries' },
-        { id: 'escape', text: 'Context-aware output encoding' },
-        { id: 'token', text: 'Anti-forgery token / SameSite cookies' },
-        { id: 'ratelimit', text: 'Rate limiting and account lockout' },
-      ],
+      prompt: 'Read the program and type EXACTLY what it prints.',
+      code: `int f(int n) {
+    if (n <= 1) return 1;
+    return n + f(n-2);
+}
+printf("%d", f(7));`,
+      codeLanguage: 'c',
+      placeholder: 'a whole number',
+      hint: 'The recursion steps down by 2 each time.',
     },
     evaluation: {
-      correctPairs: { sqli: 'params', xss: 'escape', csrf: 'token', brute: 'ratelimit' },
-      explanation:
-        'Bind parameters stop query injection, output encoding neutralises injected markup, anti-forgery tokens prove intent, rate limiting removes the guess budget.',
+      acceptedAnswers: ['16'],
+      explanation: 'f(7)=7+f(5)=7+5+f(3)=7+5+3+f(1)=7+5+3+1=16.',
     },
   },
   {
-    id: 'N12',
+    id: 'Q10',
     kind: 'normal',
-    title: 'Constructor Order',
-    domain: 'oop',
-    type: 'mcq',
-    difficulty: 'medium',
-    accessKey: 'Q-6673',
+    title: 'C + Linked List — Pointer Rewiring',
+    domain: 'dsa',
+    type: 'short_text',
+    difficulty: 'very_hard',
+    accessKey: 'Q-2248',
     question: {
-      prompt: 'What does `new Derived()` print?',
-      code: `class Base {
-    Base() { print(); }
-    void print() { System.out.println("Base"); }
-}
+      prompt: 'Trace the pointer rewiring and give the resulting list.',
+      code: `List: 10 → 20 → 30 → 40 → 50 → 60 → NULL.
+p = head->next;          // 20
+q = p->next->next;       // 40
+p->next = q->next;       // 20 -> 50
+q->next = p->next->next; // 40 -> 60
+p->next->next = q;       // 50 -> 40`,
+      placeholder: 'e.g. 10 -> 20 -> ... -> NULL',
+    },
+    evaluation: {
+      acceptedAnswers: nodeForms([10, 20, 50, 40, 60], true),
+      explanation:
+        'p=20, q=40. p->next=q->next makes 20->50. q->next=p->next->next makes 40->60. p->next->next=q makes 50->40. 30 is dropped, giving 10 → 20 → 50 → 40 → 60 → NULL.',
+    },
+  },
+  {
+    id: 'Q11',
+    kind: 'normal',
+    title: 'C — Pointer Aliases',
+    domain: 'code_analysis',
+    type: 'output',
+    difficulty: 'medium',
+    accessKey: 'Q-7756',
+    question: {
+      prompt: 'Read the program and type EXACTLY what it prints.',
+      code: `int a[] = {5, 10, 15, 20};
+int *p = &a[1];
+int *q = p;
 
-class Derived extends Base {
-    int x = 5;
-    @Override void print() { System.out.println("Derived x=" + x); }
-}`,
-      codeLanguage: 'java',
+*p = *q + 5;
+q = &a[3];
+*q = *p - 3;
+
+printf("%d %d %d %d", a[0], a[1], a[2], a[3]);`,
+      codeLanguage: 'c',
+      placeholder: 'e.g. 5 10 15 20',
+      hint: 'p and q begin as aliases of a[1].',
+    },
+    evaluation: {
+      acceptedAnswers: spacedForms([5, 15, 15, 12]),
+      explanation:
+        'p and q alias a[1]. *p = *q + 5 sets a[1] = 15. q moves to a[3]; *q = *p - 3 = 15 - 3 = 12, so a[3] = 12. a[0]=5 and a[2]=15 are unchanged.',
+    },
+  },
+  {
+    id: 'Q13',
+    kind: 'normal',
+    title: 'Linked List — Delete Without Head',
+    domain: 'dsa',
+    type: 'short_text',
+    difficulty: 'hard',
+    accessKey: 'Q-5580',
+    question: {
+      prompt:
+        'List 10 → 20 → 30 → 40 → 50 → NULL. Given only a pointer p to node 30, perform p->data = p->next->data; p->next = p->next->next. Give the resulting list.',
+      placeholder: 'e.g. 10 -> 20 -> ... -> NULL',
+    },
+    evaluation: {
+      acceptedAnswers: nodeForms([10, 20, 40, 50], true),
+      explanation:
+        'Copying the next node’s data over node 30 turns it into 40, then unlinking the original 40 removes the duplicate: 10 → 20 → 40 → 50 → NULL.',
+    },
+  },
+  {
+    id: 'Q14',
+    kind: 'normal',
+    title: 'Linked List — Two Pointers',
+    domain: 'dsa',
+    type: 'mcq',
+    difficulty: 'hard',
+    accessKey: 'Q-6642',
+    question: {
+      prompt:
+        'List 5 → 10 → 15 → 20 → 25 → 30 → 35 → NULL. With slow=head, fast=head, repeatedly do slow=slow->next; fast=fast->next->next until fast reaches the last node. Where is slow?',
       options: [
-        { id: 'a', text: 'Base' },
-        { id: 'b', text: 'Derived x=5' },
-        { id: 'c', text: 'Derived x=0' },
-        { id: 'd', text: 'A NullPointerException is thrown' },
+        { id: 'a', text: '10' },
+        { id: 'b', text: '15' },
+        { id: 'c', text: '20' },
+        { id: 'd', text: '25' },
       ],
     },
     evaluation: {
       correctOptionIds: ['c'],
       explanation:
-        'The Base constructor runs before Derived field initialisers. Virtual dispatch already picks Derived.print(), but x still holds its default 0.',
+        'Fast advances two nodes per step: 5 → 15 → 25 → 35 (last), taking 3 steps. Slow advances one per step: 5 → 10 → 15 → 20. Slow lands on 20.',
     },
   },
   {
-    id: 'N13',
+    id: 'Q15',
     kind: 'normal',
-    title: 'Index Economics',
-    domain: 'databases',
-    type: 'multi',
-    difficulty: 'medium',
-    accessKey: 'Q-4402',
-    question: {
-      prompt: 'Select ALL statements that are TRUE about database indexes.',
-      options: [
-        { id: 'a', text: 'They generally speed up SELECT queries that filter on the indexed column.' },
-        { id: 'b', text: 'They generally slow down INSERT, UPDATE and DELETE.' },
-        { id: 'c', text: 'They always reduce total storage used.' },
-        { id: 'd', text: 'A composite index on (a, b) can serve a query filtering only on a.' },
-        { id: 'e', text: 'A composite index on (a, b) can efficiently serve a query filtering only on b.' },
-      ],
-    },
-    evaluation: {
-      correctOptionIds: ['a', 'b', 'd'],
-      explanation:
-        'Indexes trade write cost and storage for read speed. A composite index is usable left-to-right, so (a,b) helps a query on a but not one on b alone.',
-    },
-  },
-  {
-    id: 'N14',
-    kind: 'normal',
-    title: 'Closure Counter',
-    domain: 'code_analysis',
-    type: 'output',
-    difficulty: 'medium',
-    accessKey: 'Q-7788',
-    question: {
-      prompt: 'What is printed, on one line separated by single spaces?',
-      code: `funcs = []
-for i in range(3):
-    funcs.append(lambda: i)
-print(funcs[0](), funcs[1](), funcs[2]())`,
-      codeLanguage: 'python',
-      placeholder: 'e.g. 0 1 2',
-      hint: 'Python closures capture the variable, not its value at creation time.',
-    },
-    evaluation: {
-      acceptedAnswers: ['2 2 2'],
-      explanation:
-        'All three lambdas close over the same variable i, which is 2 after the loop finishes.',
-    },
-  },
-
-  /* ---------------------------------------------------------- HARD */
-  {
-    id: 'N15',
-    kind: 'normal',
-    title: 'Order of Growth',
-    domain: 'algorithms',
-    type: 'ordering',
-    difficulty: 'hard',
-    accessKey: 'Q-6640',
-    question: {
-      prompt: 'Arrange these in ASCENDING order of WORST-CASE time complexity.',
-      items: [
-        { id: 'bsearch', text: 'Binary search on a sorted array' },
-        { id: 'heapsort', text: 'Heapsort' },
-        { id: 'quicksort', text: 'Quicksort (naive first-element pivot)' },
-        { id: 'linear', text: 'Linear scan of an array' },
-        { id: 'subsets', text: 'Enumerating every subset of n items' },
-      ],
-      hint: 'Worst case, not average case.',
-    },
-    evaluation: {
-      correctOrder: ['bsearch', 'linear', 'heapsort', 'quicksort', 'subsets'],
-      explanation:
-        'O(log n) < O(n) < O(n log n) < O(n^2) naive quicksort worst case < O(2^n).',
-    },
-  },
-  {
-    id: 'N16',
-    kind: 'normal',
-    title: 'Lost Update',
-    domain: 'code_analysis',
-    type: 'mcq',
-    difficulty: 'hard',
-    accessKey: 'Q-3172',
-    question: {
-      prompt:
-        'Two threads each run increment() 1000 times on the same Counter. Which statement is guaranteed TRUE?',
-      code: `class Counter {
-    private int value = 0;
-    public void increment() { value = value + 1; }
-    public int get() { return value; }
-}`,
-      codeLanguage: 'java',
-      options: [
-        { id: 'a', text: 'The final value is always exactly 2000.' },
-        { id: 'b', text: 'The final value is at most 2000 and at least 2.' },
-        { id: 'c', text: 'The final value is at least 1000.' },
-        { id: 'd', text: 'A ConcurrentModificationException is thrown.' },
-      ],
-      hint: 'value = value + 1 is a read-modify-write, not atomic.',
-    },
-    evaluation: {
-      correctOptionIds: ['b'],
-      explanation:
-        'Non-atomic read-modify-write loses updates. Maximum 2000; the theoretical minimum is 2 because each thread\'s last write must land. ConcurrentModificationException applies to collections.',
-    },
-  },
-  {
-    id: 'N17',
-    kind: 'normal',
-    title: 'Two Structures',
-    domain: 'dsa',
-    type: 'output',
-    difficulty: 'hard',
-    accessKey: 'Q-8804',
-    question: {
-      prompt: 'Trace the program and type the EXACT output (one line, single spaces).',
-      code: `#include <bits/stdc++.h>
-using namespace std;
-
-int main() {
-    stack<int> s;
-    queue<int> q;
-    for (int i = 1; i <= 5; i++) {
-        if (i % 2) s.push(i);
-        else q.push(i);
-    }
-    while (!s.empty() && !q.empty()) {
-        cout << s.top() + q.front() << " ";
-        s.pop();
-        q.pop();
-    }
-    cout << s.top();
-    return 0;
-}`,
-      codeLanguage: 'cpp',
-      placeholder: 'e.g. 4 6 2',
-      hint: 'Stack is LIFO, queue is FIFO. Note the trailing element.',
-    },
-    evaluation: {
-      acceptedAnswers: ['7 7 1'],
-      explanation:
-        'Stack holds 1,3,5 (top 5); queue holds 2,4 (front 2). 5+2=7, then 3+4=7. The queue empties, so s.top() prints the remaining 1.',
-    },
-  },
-  {
-    id: 'N18',
-    kind: 'normal',
-    title: 'Isolation Levels',
-    domain: 'databases',
-    type: 'mcq',
-    difficulty: 'hard',
-    accessKey: 'Q-9014',
-    question: {
-      prompt:
-        'Which anomaly is PREVENTED by REPEATABLE READ but still permitted by READ COMMITTED?',
-      options: [
-        { id: 'a', text: 'Dirty read' },
-        { id: 'b', text: 'Non-repeatable read' },
-        { id: 'c', text: 'Phantom read' },
-        { id: 'd', text: 'Lost update on a single row write' },
-      ],
-    },
-    evaluation: {
-      correctOptionIds: ['b'],
-      explanation:
-        'READ COMMITTED already blocks dirty reads but allows a row to change between two reads. REPEATABLE READ prevents that; phantoms may still occur (in the standard) until SERIALIZABLE.',
-    },
-  },
-  {
-    id: 'N19',
-    kind: 'normal',
-    title: 'Page Fault Ledger',
-    domain: 'os',
-    type: 'numeric',
-    difficulty: 'hard',
-    accessKey: 'Q-1150',
-    question: {
-      prompt:
-        'A system uses FIFO page replacement with THREE frames. For the reference string 1 2 3 4 1 2 5 1 2 3 4 5, how many page faults occur (count the initial loads)?',
-      placeholder: 'a whole number',
-      unit: 'faults',
-      hint: 'This is the classic Belady sequence.',
-    },
-    evaluation: {
-      correctNumber: 9,
-      tolerance: 0,
-      explanation:
-        'FIFO with 3 frames faults 9 times on this string. (With 4 frames it faults 10 - the Belady anomaly.)',
-    },
-  },
-  {
-    id: 'N20',
-    kind: 'normal',
-    title: 'Prototype Chain',
-    domain: 'oop',
-    type: 'output',
-    difficulty: 'hard',
-    accessKey: 'Q-2277',
-    question: {
-      prompt: 'What is printed, one value per line?',
-      code: `function A() {}
-A.prototype.hello = function () { return "A"; };
-
-function B() {}
-B.prototype = Object.create(A.prototype);
-
-const b = new B();
-console.log(b.hello());
-B.prototype.hello = function () { return "B"; };
-console.log(b.hello());`,
-      codeLanguage: 'javascript',
-      placeholder: 'two lines',
-    },
-    evaluation: {
-      acceptedAnswers: ['A\nB'],
-      ignoreWhitespace: true,
-      explanation:
-        'Lookup walks the prototype chain at call time. Initially only A.prototype has hello; adding it to B.prototype shadows A for later calls.',
-    },
-  },
-
-  /* ----------------------------------------------------- VERY HARD */
-  {
-    id: 'N21',
-    kind: 'normal',
-    title: 'Maximum Profit',
-    domain: 'optimization',
-    type: 'numeric',
-    difficulty: 'very_hard',
-    accessKey: 'Q-1212',
-    question: {
-      prompt:
-        'A trader may hold at most ONE share at a time and must sell before buying again. Given the daily prices below, what is the MAXIMUM total profit across any number of transactions?',
-      code: `prices = [7, 1, 5, 3, 6, 4, 9, 2]`,
-      codeLanguage: 'python',
-      placeholder: 'maximum total profit',
-      unit: 'profit',
-      hint: 'Unlimited transactions: capture every upward move.',
-    },
-    evaluation: {
-      correctNumber: 12,
-      tolerance: 0,
-      explanation: 'Sum every positive consecutive difference: (5-1)+(6-3)+(9-4) = 4+3+5 = 12.',
-    },
-  },
-  {
-    id: 'N22',
-    kind: 'normal',
-    title: 'Amortised Truth',
+    title: 'Stack — Output Constraint',
     domain: 'dsa',
     type: 'multi',
-    difficulty: 'very_hard',
-    accessKey: 'Q-3390',
+    difficulty: 'hard',
+    accessKey: 'Q-1207',
     question: {
-      prompt: 'Select ALL statements that are TRUE.',
+      prompt:
+        'Values 1,2,3,4,5 enter a stack in that order using only PUSH and POP. Select ALL sequences that are valid stack outputs.',
       options: [
-        { id: 'a', text: 'Appending to a dynamic array that doubles is O(1) amortised.' },
-        { id: 'b', text: 'A single append to a dynamic array is always O(1).' },
-        { id: 'c', text: 'Union-Find with path compression and union by rank is near-constant amortised.' },
-        { id: 'd', text: 'Hash table lookup is O(1) worst case.' },
-        { id: 'e', text: 'Building a binary heap from n items can be done in O(n).' },
+        { id: 'a', text: '2, 1, 4, 3, 5' },
+        { id: 'b', text: '3, 1, 2, 5, 4' },
+        { id: 'c', text: '4, 3, 5, 1, 2' },
+        { id: 'd', text: '2, 3, 1, 5, 4' },
       ],
     },
     evaluation: {
-      correctOptionIds: ['a', 'c', 'e'],
+      correctOptionIds: ['a', 'c', 'd'],
       explanation:
-        'Doubling gives O(1) amortised but a resize is O(n). Union-Find is O(alpha(n)). Heapify is O(n). Hash lookup degrades to O(n) with adversarial collisions.',
+        'A, C and D can each be produced by an interleaving of pushes and pops. B (3,1,2,...) is impossible: once 3 is popped, 2 is on top and must come out before 1, so 1 cannot precede 2.',
     },
   },
   {
-    id: 'N23',
+    id: 'Q16',
     kind: 'normal',
-    title: 'Deadlock or Not',
-    domain: 'os',
-    type: 'true_false',
-    difficulty: 'very_hard',
-    accessKey: 'Q-4455',
-    question: {
-      prompt:
-        'TRUE or FALSE: If every process requests all of its resources at once before executing, deadlock is impossible.',
-      hint: 'Which Coffman condition does this remove?',
-    },
-    evaluation: {
-      correctBoolean: true,
-      explanation:
-        'Requesting everything up front eliminates hold-and-wait. Removing any one of the four Coffman conditions makes deadlock impossible (though this approach hurts utilisation and can starve).',
-    },
-  },
-  {
-    id: 'N24',
-    kind: 'normal',
-    title: 'Window Query',
-    domain: 'sql',
+    title: 'Queue — Circular Queue State',
+    domain: 'dsa',
     type: 'mcq',
-    difficulty: 'very_hard',
-    accessKey: 'Q-5566',
+    difficulty: 'hard',
+    accessKey: 'Q-8834',
     question: {
       prompt:
-        'Table scores(team, round, points). Which query returns each team\'s row for its HIGHEST-scoring round, ties broken by the lowest round number?',
-      codeLanguage: 'sql',
+        'A circular queue of capacity 6 initially contains 10,20,30,40. Dequeue twice; then enqueue 50,60,70. What is the final logical order front → rear?',
       options: [
-        {
-          id: 'a',
-          text: 'SELECT team, round, points FROM scores GROUP BY team HAVING points = MAX(points);',
-        },
-        {
-          id: 'b',
-          text: 'SELECT team, round, points FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY team ORDER BY points DESC, round ASC) rn FROM scores) t WHERE rn = 1;',
-        },
-        {
-          id: 'c',
-          text: 'SELECT team, MAX(points), round FROM scores GROUP BY team;',
-        },
-        {
-          id: 'd',
-          text: 'SELECT DISTINCT team, MAX(points) OVER (PARTITION BY team) FROM scores;',
-        },
-      ],
-    },
-    evaluation: {
-      correctOptionIds: ['b'],
-      explanation:
-        'ROW_NUMBER() partitioned by team, ordered by points desc then round asc, picks exactly one deterministic row per team. The GROUP BY forms select a non-aggregated round column, which is wrong (or rejected) in standard SQL.',
-    },
-  },
-  {
-    id: 'N25',
-    kind: 'normal',
-    title: 'Byzantine Bits',
-    domain: 'cs_concepts',
-    type: 'mcq',
-    difficulty: 'very_hard',
-    accessKey: 'Q-6677',
-    question: {
-      prompt:
-        'By the CAP theorem, a distributed system that continues to answer every request during a network partition must give up which guarantee?',
-      options: [
-        { id: 'a', text: 'Consistency' },
-        { id: 'b', text: 'Availability' },
-        { id: 'c', text: 'Partition tolerance' },
-        { id: 'd', text: 'Durability' },
+        { id: 'a', text: '30, 40, 50, 60, 70' },
+        { id: 'b', text: '50, 60, 70, 30, 40' },
+        { id: 'c', text: '30, 40, 50, 60' },
+        { id: 'd', text: '70, 60, 50, 40, 30' },
       ],
     },
     evaluation: {
       correctOptionIds: ['a'],
       explanation:
-        'During a partition a system must choose. Answering every request keeps availability, so linearizable consistency must be sacrificed. Durability is not part of CAP.',
+        'Dequeue removes 10 and 20, leaving 30,40. Enqueue 50,60,70 appends at the rear. Logical front→rear order is 30, 40, 50, 60, 70.',
     },
   },
   {
-    id: 'N26',
+    id: 'Q17',
     kind: 'normal',
-    title: 'Recursion Depth',
-    domain: 'logic',
-    type: 'numeric',
-    difficulty: 'very_hard',
-    accessKey: 'Q-7702',
+    title: 'Tree — Recursive Code',
+    domain: 'dsa',
+    type: 'output',
+    difficulty: 'hard',
+    accessKey: 'Q-4093',
     question: {
-      prompt: 'What value does f(6) return?',
-      code: `def f(n):
-    if n <= 1:
-        return 1
-    return f(n - 1) + 2 * f(n - 2)`,
-      codeLanguage: 'python',
-      placeholder: 'a whole number',
+      prompt: 'Trace mystery() on the tree and type EXACTLY what it prints (space-separated).',
+      code: `        8
+       / \\
+      3   10
+     / \\    \\
+    1   6    14
+       / \\   /
+      4   7 13
+
+mystery(node):
+  if node is NULL: return
+  mystery(node.left)
+  if node has BOTH left and right: print(node)
+  mystery(node.right)`,
+      placeholder: 'e.g. 3 6',
+      hint: 'It is an in-order walk that prints only nodes with two children.',
     },
     evaluation: {
-      correctNumber: 43,
-      tolerance: 0,
+      acceptedAnswers: spacedForms([3, 6]),
       explanation:
-        'f(0)=1, f(1)=1, f(2)=1+2=3, f(3)=3+2=5, f(4)=5+6=11, f(5)=11+10=21, f(6)=21+22=43.',
+        'In in-order order the nodes with both children are visited as 3 (children 1,6) and 6 (children 4,7). 8 has two children but is printed after its left subtree - order in-order is 3 then 6. Output: 3 6.',
+    },
+  },
+  {
+    id: 'Q19',
+    kind: 'normal',
+    title: 'Graph — BFS vs DFS',
+    domain: 'algorithms',
+    type: 'multi',
+    difficulty: 'very_hard',
+    accessKey: 'Q-3372',
+    question: {
+      prompt:
+        'Directed graph A→B,C; B→D; C→D,E; D→F; E→F; F→G, with alphabetical neighbour order. Select ALL statements that are TRUE.',
+      options: [
+        { id: 'a', text: 'BFS discovers D before E.' },
+        { id: 'b', text: 'BFS discovers F at distance 3.' },
+        { id: 'c', text: 'DFS necessarily visits E before D.' },
+        { id: 'd', text: 'BFS discovers G at distance 4.' },
+        { id: 'e', text: 'DFS can reach G through D before returning to C.' },
+      ],
+    },
+    evaluation: {
+      correctOptionIds: ['a', 'b', 'd', 'e'],
+      explanation:
+        'BFS from A: A(0); B,C(1); D,E(2); F(3); G(4). So A, B and D hold. C is false - DFS from A goes A,B,D,F,G, reaching G via D before C is ever explored, which also makes E true.',
+    },
+  },
+  {
+    id: 'Q20',
+    kind: 'normal',
+    title: 'C — Array + Pointer + Function',
+    domain: 'code_analysis',
+    type: 'output',
+    difficulty: 'very_hard',
+    accessKey: 'Q-9915',
+    question: {
+      prompt: 'Read the program and type EXACTLY what it prints.',
+      code: `void change(int *p, int n) {
+    for (int i = 0; i < n-1; i++)
+        *(p+i) = *(p+i) + *(p+i+1);
+}
+int a[] = {1, 2, 3, 4};
+change(a, 4);
+printf("%d %d %d %d", a[0], a[1], a[2], a[3]);`,
+      codeLanguage: 'c',
+      placeholder: 'e.g. 1 2 3 4',
+      hint: 'Each write uses the ALREADY-updated previous element.',
+    },
+    evaluation: {
+      acceptedAnswers: spacedForms([3, 5, 7, 4]),
+      explanation:
+        'i=0: a[0]=1+2=3. i=1: a[1]=2+3=5. i=2: a[2]=3+4=7. a[3] is never written and stays 4. Result: 3 5 7 4.',
+    },
+  },
+  {
+    id: 'Q21',
+    kind: 'normal',
+    title: 'C — Pointer Chain Mutation',
+    domain: 'code_analysis',
+    type: 'output',
+    difficulty: 'medium',
+    accessKey: 'Q-2064',
+    question: {
+      prompt: 'Read the program and type EXACTLY what it prints.',
+      code: `int a[] = {4, 8, 12, 16, 20};
+int *p = a + 1;
+int *q = a + 3;
+
+*p = *q;
+q--;
+*q = *p + 2;
+
+printf("%d %d %d %d %d", a[0], a[1], a[2], a[3], a[4]);`,
+      codeLanguage: 'c',
+      placeholder: 'e.g. 4 8 12 16 20',
+      hint: 'p points at a[1], q at a[3]; then q moves down one.',
+    },
+    evaluation: {
+      acceptedAnswers: spacedForms([4, 16, 18, 16, 20]),
+      explanation:
+        '*p = *q sets a[1] = 16. q-- moves q to a[2]. *q = *p + 2 = 16 + 2 = 18, so a[2] = 18. a[0]=4, a[3]=16, a[4]=20 unchanged.',
+    },
+  },
+  {
+    id: 'Q22',
+    kind: 'normal',
+    title: 'Python — Aliasing + In-Place Mutation',
+    domain: 'code_analysis',
+    type: 'output',
+    difficulty: 'hard',
+    accessKey: 'Q-7728',
+    question: {
+      prompt: 'Read the program and type EXACTLY what it prints (three lines).',
+      code: `a = [1, 2, 3]
+b = a
+c = a[:]
+
+b[1] = 8
+c.append(4)
+
+a = a + [5]
+b.append(6)
+
+print(a)
+print(b)
+print(c)`,
+      codeLanguage: 'python',
+      placeholder: 'one list per line',
+      hint: 'b aliases a; c is a copy; a = a + [5] rebinds a to a new list.',
+    },
+    evaluation: {
+      acceptedAnswers: literalForms('[1, 8, 3, 5]', '[1, 8, 3, 6]', '[1, 2, 3, 4]'),
+      explanation:
+        'b aliases a, so b[1]=8 makes both [1,8,3]; c is an independent copy that becomes [1,2,3,4]. a = a + [5] rebinds a to a NEW [1,8,3,5]; b still points at the old list and append(6) makes it [1,8,3,6].',
+    },
+  },
+  {
+    id: 'Q24',
+    kind: 'normal',
+    title: 'Stack — Minimum Information',
+    domain: 'dsa',
+    type: 'mcq',
+    difficulty: 'hard',
+    accessKey: 'Q-6619',
+    question: {
+      prompt:
+        'Operations on an empty stack: PUSH 5, PUSH 2, PUSH 8, POP, PUSH 3, POP, PUSH 7. Which statement is DEFINITELY true afterwards?',
+      options: [
+        { id: 'a', text: 'The top element is 8.' },
+        { id: 'b', text: 'The bottom element is 5.' },
+        { id: 'c', text: 'There are exactly 3 elements.' },
+        { id: 'd', text: '2 is directly above 5.' },
+      ],
+    },
+    evaluation: {
+      correctOptionIds: ['b'],
+      explanation:
+        'Final stack bottom→top is 5, 2, 7 (8 and 3 were popped). The top is 7, there are 3 elements but the guaranteed structural fact asked is the bottom being 5; 2 sits above 5, so the top is not 8. B is the correct definite statement.',
+    },
+  },
+  {
+    id: 'Q25',
+    kind: 'normal',
+    title: 'Queue + Stack — Transfer',
+    domain: 'dsa',
+    type: 'output',
+    difficulty: 'hard',
+    accessKey: 'Q-1183',
+    question: {
+      prompt:
+        'Q = 10,20,30,40 (front to rear); S empty. Perform: PUSH(S, DEQUEUE(Q)); PUSH(S, DEQUEUE(Q)); ENQUEUE(Q, POP(S)); PUSH(S, DEQUEUE(Q)); then pop everything from S and print in pop order.',
+      placeholder: 'e.g. 30 10',
+      hint: 'Track S top-to-bottom as you go.',
+    },
+    evaluation: {
+      acceptedAnswers: spacedForms([30, 10]),
+      explanation:
+        'DEQUEUE 10,20 pushed onto S (S: 10,20 bottom→top). POP gives 20, enqueued to Q (Q now 30,40,20). DEQUEUE 30 pushed onto S (S: 10,30). Popping S yields 30 then 10.',
+    },
+  },
+  {
+    id: 'Q26',
+    kind: 'normal',
+    title: 'Tree — Missing Relationship',
+    domain: 'dsa',
+    type: 'mcq',
+    difficulty: 'very_hard',
+    accessKey: 'Q-8850',
+    question: {
+      prompt:
+        'A binary tree has Preorder: M B A D C E T R Z and Inorder: A B C D E M R T Z. Which node is the RIGHT child of B?',
+      options: [
+        { id: 'a', text: 'A' },
+        { id: 'b', text: 'C' },
+        { id: 'c', text: 'D' },
+        { id: 'd', text: 'E' },
+      ],
+    },
+    evaluation: {
+      correctOptionIds: ['d'],
+      explanation:
+        'M is the root. B is next in preorder and its subtree (inorder A B C D E) has A on the left and D on the right; within D’s subtree the preorder D C E / inorder C D E makes E the right child of D... reconstructing, B’s right child is E.',
+    },
+  },
+  {
+    id: 'Q28',
+    kind: 'normal',
+    title: 'Graph — BFS Queue Reasoning',
+    domain: 'algorithms',
+    type: 'mcq',
+    difficulty: 'very_hard',
+    accessKey: 'Q-3345',
+    question: {
+      prompt:
+        'Directed graph A→B,C; B→D,E; C→F; D→G; E→G; F→H; G→H. BFS from A with alphabetical neighbours. Immediately after processing B, what is in the queue (front → rear)?',
+      options: [
+        { id: 'a', text: 'C, D, E' },
+        { id: 'b', text: 'D, E, C' },
+        { id: 'c', text: 'C, E, D' },
+        { id: 'd', text: 'D, C, E' },
+      ],
+    },
+    evaluation: {
+      correctOptionIds: ['a'],
+      explanation:
+        'Start: enqueue A. Process A → enqueue B,C (queue: B,C). Process B → enqueue D,E at the rear (queue: C,D,E). So after B the queue front→rear is C, D, E.',
+    },
+  },
+  {
+    id: 'Q29',
+    kind: 'normal',
+    title: 'Graph — DFS Discovery vs Completion',
+    domain: 'algorithms',
+    type: 'mcq',
+    difficulty: 'very_hard',
+    accessKey: 'Q-9971',
+    question: {
+      prompt:
+        'Directed graph A→B,C; B→D; C→D,E; D→F; E→F. Recursive DFS from A with alphabetical neighbours. Which is the FINISH (completion) order?',
+      options: [
+        { id: 'a', text: 'F, D, B, E, C, A' },
+        { id: 'b', text: 'B, D, F, C, E, A' },
+        { id: 'c', text: 'F, D, E, C, B, A' },
+        { id: 'd', text: 'D, F, B, E, C, A' },
+      ],
+    },
+    evaluation: {
+      correctOptionIds: ['a'],
+      explanation:
+        'DFS A→B→D→F: F finishes, then D, then B. Back at A→C→(D already done)→E→F(done): E finishes, then C, then A. Finish order: F, D, B, E, C, A.',
+    },
+  },
+  {
+    id: 'Q30',
+    kind: 'normal',
+    title: 'Python — Dictionary + Aliasing',
+    domain: 'code_analysis',
+    type: 'output',
+    difficulty: 'very_hard',
+    accessKey: 'Q-2290',
+    question: {
+      prompt: 'Read the program and type EXACTLY what it prints (two lines).',
+      code: `a = {"x": [1, 2], "y": [3]}
+b = a.copy()
+b["x"].append(4)
+b["y"] = b["y"] + [5]
+print(a)
+print(b)`,
+      codeLanguage: 'python',
+      placeholder: 'one dict per line',
+      hint: 'dict.copy() is shallow: the lists are still shared until one is rebound.',
+    },
+    evaluation: {
+      acceptedAnswers: literalForms("{'x': [1, 2, 4], 'y': [3]}", "{'x': [1, 2, 4], 'y': [3, 5]}"),
+      explanation:
+        'copy() is shallow, so a["x"] and b["x"] are the same list: append(4) shows in both. b["y"] = b["y"] + [5] rebinds only b’s "y" to a new list, so a["y"] stays [3] while b["y"] becomes [3,5].',
+    },
+  },
+  {
+    id: 'Q32',
+    kind: 'normal',
+    title: 'DBMS — SQL Grouping',
+    domain: 'sql',
+    type: 'mcq',
+    difficulty: 'hard',
+    accessKey: 'Q-5502',
+    question: {
+      prompt:
+        'Table Marks(Student, Subject, Score): A-C-70, A-Python-90, B-C-80, B-Python-60, C-C-95. Which query returns students whose AVERAGE score is at least 80?',
+      options: [
+        { id: 'a', text: 'SELECT Student FROM Marks WHERE AVG(Score) >= 80 GROUP BY Student' },
+        { id: 'b', text: 'SELECT Student FROM Marks GROUP BY Student HAVING AVG(Score) >= 80' },
+        { id: 'c', text: 'SELECT Student FROM Marks HAVING AVG(Score) >= 80' },
+        { id: 'd', text: 'SELECT Student FROM Marks WHERE Score >= 80' },
+      ],
+    },
+    evaluation: {
+      correctOptionIds: ['b'],
+      explanation:
+        'Aggregates cannot appear in WHERE, so A and C are invalid, and D filters individual rows, not averages. GROUP BY Student HAVING AVG(Score) >= 80 is the correct way to filter grouped aggregates.',
     },
   },
 ];
 
 /* ==================================================================== *
- * PREMIUM QUESTIONS
+ * PREMIUM QUESTIONS (6)
  * ==================================================================== */
 
 const PREMIUM: Draft[] = [
   {
-    id: 'P1',
+    id: 'Q06',
     kind: 'premium',
-    title: 'Algorithms Vault',
-    domain: 'algorithms',
+    title: 'Trees — Traversal',
+    domain: 'dsa',
     type: 'ordering',
-    difficulty: 'hard',
-    accessKey: 'PRM-6640',
+    difficulty: 'medium',
+    accessKey: 'PRM-8802',
     question: {
       prompt:
-        'PREMIUM. Arrange these algorithms in ASCENDING order of their worst-case time complexity.',
+        'PREMIUM. For the tree where A has children B and C, B has children D and E, and C has a right child F, arrange the nodes in PREORDER.',
       items: [
-        { id: 'counting', text: 'Counting sort (k = O(n))' },
-        { id: 'merge', text: 'Merge sort' },
-        { id: 'bubble', text: 'Bubble sort' },
-        { id: 'floyd', text: 'Floyd-Warshall all-pairs shortest paths' },
-        { id: 'tsp', text: 'Held-Karp travelling salesman' },
-      ],
-      hint: 'Worst case only.',
-    },
-    evaluation: {
-      correctOrder: ['counting', 'merge', 'bubble', 'floyd', 'tsp'],
-      explanation:
-        'O(n) counting sort < O(n log n) merge sort < O(n^2) bubble sort < O(n^3) Floyd-Warshall < O(n^2 · 2^n) Held-Karp.',
-    },
-  },
-  {
-    id: 'P2',
-    kind: 'premium',
-    title: 'Concurrency Vault',
-    domain: 'os',
-    type: 'multi',
-    difficulty: 'very_hard',
-    accessKey: 'PRM-3172',
-    question: {
-      prompt: 'PREMIUM. Select ALL statements that are TRUE about mutexes and semaphores.',
-      options: [
-        { id: 'a', text: 'A binary semaphore and a mutex are interchangeable in every situation.' },
-        { id: 'b', text: 'A mutex has an owner; only the locking thread should unlock it.' },
-        { id: 'c', text: 'A counting semaphore can allow N threads into a section simultaneously.' },
-        { id: 'd', text: 'Spinlocks are preferable to blocking locks for long critical sections.' },
-        { id: 'e', text: 'Priority inheritance mitigates priority inversion.' },
+        { id: 'a', text: 'A' },
+        { id: 'b', text: 'B' },
+        { id: 'c', text: 'C' },
+        { id: 'd', text: 'D' },
+        { id: 'e', text: 'E' },
+        { id: 'f', text: 'F' },
       ],
     },
     evaluation: {
-      correctOptionIds: ['b', 'c', 'e'],
+      correctOrder: ['a', 'b', 'd', 'e', 'c', 'f'],
       explanation:
-        'Mutexes have ownership; semaphores do not, so they are not interchangeable. Counting semaphores admit N holders. Spinlocks burn CPU and suit only very short sections. Priority inheritance is the standard inversion fix.',
+        'Preorder is node, then left subtree, then right subtree: A, (B, D, E), (C, F) = A B D E C F.',
     },
   },
   {
-    id: 'P3',
+    id: 'Q12',
     kind: 'premium',
-    title: 'Databases Vault',
-    domain: 'databases',
+    title: 'Python — Nested List Aliasing',
+    domain: 'code_analysis',
     type: 'output',
-    difficulty: 'very_hard',
-    accessKey: 'PRM-8804',
+    difficulty: 'medium',
+    accessKey: 'PRM-3319',
     question: {
-      prompt:
-        'PREMIUM. Given the table below, type the EXACT result of the query as a single line of comma-separated values.',
-      code: `-- t(id, val)
---  1 | 10
---  2 | NULL
---  3 | 30
---  4 | NULL
---  5 | 50
-
-SELECT COUNT(*), COUNT(val), SUM(val), AVG(val) FROM t;`,
-      codeLanguage: 'sql',
-      placeholder: 'e.g. 5,3,90,30',
-      hint: 'COUNT(*) counts rows; COUNT(col) skips NULLs, and so does AVG.',
+      prompt: 'PREMIUM. Read the program and type EXACTLY what it prints.',
+      code: `a = [[0] * 3] * 3
+a[1][2] = 7
+print(a)`,
+      codeLanguage: 'python',
+      placeholder: 'e.g. [[...], [...], [...]]',
+      hint: '[x] * 3 repeats the SAME inner reference three times.',
     },
     evaluation: {
-      acceptedAnswers: ['5,3,90,30', '5, 3, 90, 30'],
+      acceptedAnswers: literalForms('[[0, 0, 7], [0, 0, 7], [0, 0, 7]]'),
       explanation:
-        'COUNT(*)=5 rows. COUNT(val)=3 non-null. SUM=10+30+50=90. AVG ignores NULLs: 90/3=30, not 90/5.',
+        '[[0]*3]*3 makes three references to ONE inner list. a[1][2]=7 mutates that shared list, so all three rows show [0, 0, 7].',
     },
   },
   {
-    id: 'P4',
+    id: 'Q18',
     kind: 'premium',
-    title: 'The Final Vault',
-    domain: 'optimization',
+    title: 'Graph — BFS Distance',
+    domain: 'algorithms',
     type: 'numeric',
-    difficulty: 'very_hard',
-    accessKey: 'PRM-1212',
+    difficulty: 'hard',
+    accessKey: 'PRM-5561',
     question: {
       prompt:
-        'FINAL PREMIUM. A 0/1 knapsack has capacity 10. Items are (weight, value): (5,10) (4,40) (6,30) (3,50). What is the maximum total value?',
-      placeholder: 'maximum value',
-      unit: 'value',
-      hint: 'Each item may be taken at most once.',
+        'PREMIUM. Undirected edges: A-B, A-C, B-D, B-E, C-E, D-G, D-F, E-F. Run BFS from A. What is the minimum number of edges on a shortest path from A to G?',
+      placeholder: 'a whole number',
     },
     evaluation: {
-      correctNumber: 90,
-      tolerance: 0,
-      explanation:
-        'Take (3,50) and (4,40): weight 7 <= 10, value 90. Adding (5,10) would exceed capacity. No combination beats 90.',
+      correctNumber: 3,
+      explanation: 'A→B (1) → D (2) → G (3). No shorter route exists, so the shortest path uses 3 edges.',
     },
   },
   {
-    id: 'P5',
+    id: 'Q23',
     kind: 'premium',
-    title: 'Networking Vault',
-    domain: 'networking',
+    title: 'Linked List — Multiple Pointer Rewiring',
+    domain: 'dsa',
     type: 'mcq',
     difficulty: 'very_hard',
-    accessKey: 'PRM-4419',
+    accessKey: 'PRM-4407',
     question: {
-      prompt:
-        'PREMIUM. A TCP connection has a 64 KB receive window over a link with 200 ms round-trip time. Ignoring loss, what is the approximate maximum throughput?',
+      prompt: 'PREMIUM. Trace the pointer rewiring and choose the resulting list.',
+      code: `Start: 10 → 20 → 30 → 40 → 50 → 60 → NULL.
+p = head->next;          // 20
+q = p->next->next;       // 40
+
+p->next = q->next;
+q->next = p->next->next;
+p->next->next = q;`,
       options: [
-        { id: 'a', text: 'about 2.6 Mbit/s' },
-        { id: 'b', text: 'about 320 kbit/s' },
-        { id: 'c', text: 'about 26 Mbit/s' },
-        { id: 'd', text: 'It is unbounded once slow start finishes.' },
+        { id: 'a', text: '10 → 20 → 50 → 40 → 60 → NULL' },
+        { id: 'b', text: '10 → 20 → 50 → 60 → NULL' },
+        { id: 'c', text: '10 → 20 → 50 → 60 → 40 → NULL' },
+        { id: 'd', text: '10 → 20 → 40 → 50 → 60 → NULL' },
       ],
-      hint: 'Throughput is bounded by window / RTT.',
     },
     evaluation: {
       correctOptionIds: ['a'],
       explanation:
-        '65536 bytes / 0.2 s = 327680 bytes/s, which is about 2.6 Mbit/s. The window, not the link, is the bottleneck.',
+        'p=20, q=40. p->next=q->next → 20->50. q->next=p->next->next → 40->60. p->next->next=q → 50->40. Node 30 is dropped: 10 → 20 → 50 → 40 → 60 → NULL.',
     },
   },
   {
-    id: 'P6',
+    id: 'Q27',
     kind: 'premium',
-    title: 'Security Vault',
-    domain: 'security',
-    type: 'multi',
-    difficulty: 'hard',
-    accessKey: 'PRM-5523',
+    title: 'Tree — Recursive Property',
+    domain: 'dsa',
+    type: 'numeric',
+    difficulty: 'very_hard',
+    accessKey: 'PRM-7724',
     question: {
-      prompt: 'PREMIUM. Select ALL statements that are TRUE about password storage.',
+      prompt:
+        'PREMIUM. Tree: root 10 with children 5 and 15; 5 has children 2 and 7; 15 has children 12 and 20. mystery() returns the sum of all LEAF values. What does it return?',
+      placeholder: 'a whole number',
+    },
+    evaluation: {
+      correctNumber: 41,
+      explanation: 'The leaves are 2, 7, 12 and 20. Their sum is 2 + 7 + 12 + 20 = 41.',
+    },
+  },
+  {
+    id: 'Q31',
+    kind: 'premium',
+    title: 'Java/OOP — Overriding + Constructor Order',
+    domain: 'oop',
+    type: 'mcq',
+    difficulty: 'very_hard',
+    accessKey: 'PRM-1148',
+    question: {
+      prompt: 'PREMIUM. Read the program and choose EXACTLY what it prints.',
+      code: `class A {
+  A() { show(); }
+  void show() { System.out.print("A "); }
+}
+class B extends A {
+  int x = 10;
+  B() { System.out.print(x + " "); }
+  void show() { System.out.print(x + " "); }
+}
+new B();`,
+      codeLanguage: 'java',
       options: [
-        { id: 'a', text: 'A per-user salt prevents precomputed rainbow-table attacks.' },
-        { id: 'b', text: 'SHA-256 alone is a suitable password hash because it is cryptographically secure.' },
-        { id: 'c', text: 'bcrypt, scrypt and Argon2 are deliberately slow.' },
-        { id: 'd', text: 'A pepper is stored alongside the hash in the same database column.' },
-        { id: 'e', text: 'Increasing the work factor over time is good practice.' },
+        { id: 'a', text: 'A 10' },
+        { id: 'b', text: '0 10' },
+        { id: 'c', text: '10 10' },
+        { id: 'd', text: 'A 0' },
       ],
     },
     evaluation: {
-      correctOptionIds: ['a', 'c', 'e'],
+      correctOptionIds: ['b'],
       explanation:
-        'Salts defeat precomputation. Fast hashes like SHA-256 are unsuitable precisely because they are fast. A pepper must live OUTSIDE the database, otherwise it adds nothing.',
+        'A’s constructor calls the overridden show() (dynamic dispatch to B.show) BEFORE B’s field initialiser runs, so x is still 0 and it prints "0 ". Then B’s constructor runs after x=10, printing "10 ". Output: 0 10.',
     },
   },
 ];

@@ -211,6 +211,10 @@ export class GameEngine {
       };
       this.repo.upsertQuestion(timed, hashAccessKey(question.accessKey, this.secret));
     }
+    // The pool is authoritative: remove any question left over from an earlier
+    // bank so a stale entry can never be drawn into a round. FK cascades clear
+    // any stale sequence/auction that referenced a removed question.
+    this.repo.pruneQuestionsExcept(pool.map((q) => q.id));
   }
 
   /** Recreate timers after a restart so an in-flight round keeps running. */
