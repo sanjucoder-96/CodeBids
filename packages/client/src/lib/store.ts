@@ -432,7 +432,17 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
       };
       set({ lastResultAt: Date.now() });
       if (state.role === 'participant' && state.me?.teamId === result.teamId) {
-        if (result.result === 'correct') {
+        if (result.isPremium) {
+          // A premium is a BID the team staked on the question: a correct answer
+          // WINS the bid (gains it), a wrong answer or timeout LOSES the bid.
+          const won = result.result === 'correct';
+          sound.play(won ? 'correct' : 'wrong');
+          get().showFlash({
+            kind: won ? 'correct' : 'wrong',
+            title: won ? 'WON THE BID' : 'LOST THE BID',
+            amount: result.delta,
+          });
+        } else if (result.result === 'correct') {
           sound.play('correct');
           get().showFlash({ kind: 'correct', title: 'CORRECT', amount: result.delta });
         } else if (result.result === 'timeout') {
@@ -503,7 +513,7 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
       const payload = d as unknown as { teamId: string; teamName: string; amount: number };
       sound.play('hammer');
       if (state.role === 'participant' && state.me?.teamId === payload.teamId) {
-        get().showFlash({ kind: 'auction_won', title: 'YOU WON', amount: payload.amount });
+        get().showFlash({ kind: 'auction_won', title: 'YOU WON THE BID', amount: payload.amount });
       }
       break;
     }

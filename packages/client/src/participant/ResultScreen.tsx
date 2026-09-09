@@ -36,8 +36,16 @@ export function ResultScreen() {
           ? 'skipped'
           : 'wrong';
 
-  const headline =
-    kind === 'correct'
+  // A premium is a BID the team staked on the question, so its result reads as
+  // winning or losing the bid rather than a plain correct/incorrect.
+  const premium = question?.kind === 'premium';
+  const headline = premium
+    ? kind === 'correct'
+      ? 'WON THE BID'
+      : kind === 'skipped'
+        ? 'SAT OUT'
+        : 'LOST THE BID'
+    : kind === 'correct'
       ? 'CORRECT'
       : kind === 'timeout'
         ? "TIME'S UP"
@@ -111,6 +119,13 @@ export function ResultScreen() {
             ) : (
               <p className="muted">No capital changed hands.</p>
             )}
+
+            {premium && result.delta !== 0 ? (
+              <p className="result__bid-note muted">
+                You {result.delta > 0 ? 'won' : 'lost'} the bid for{' '}
+                {money(Math.abs(result.delta), symbol)}.
+              </p>
+            ) : null}
 
             <div className="result__capital">
               <span className="label">Capital now</span>

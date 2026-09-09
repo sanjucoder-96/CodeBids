@@ -37,7 +37,7 @@ export function PremiumScreen() {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1, type: 'spring', stiffness: 300, damping: 20 }}
         >
-          {isReclaim ? 'RECLAIM ACCEPTED' : 'YOU WON'}
+          {isReclaim ? 'RECLAIM ACCEPTED' : 'YOU WON THE BID'}
         </motion.div>
 
         <h2 className="premium-hero__title">

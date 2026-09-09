@@ -400,6 +400,37 @@ describe('result frames', () => {
     expect(useStore.getState().flash).toMatchObject({ kind: 'wrong', amount: -100 });
   });
 
+  it('frames a premium result as WON / LOST THE BID', () => {
+    useStore.setState({ me: me({ teamId: 'T01' }), role: 'participant' });
+    feed('QUESTION_RESULT', {
+      teamId: 'T01',
+      teamName: 'A',
+      questionId: 'P01',
+      slotIndex: 4,
+      result: 'correct',
+      delta: 700,
+      newCapital: 2200,
+      isPremium: true,
+      riskAmount: 700,
+      at: Date.now(),
+    });
+    expect(useStore.getState().flash).toMatchObject({ kind: 'correct', title: 'WON THE BID', amount: 700 });
+
+    feed('QUESTION_RESULT', {
+      teamId: 'T01',
+      teamName: 'A',
+      questionId: 'P01',
+      slotIndex: 4,
+      result: 'wrong',
+      delta: -700,
+      newCapital: 800,
+      isPremium: true,
+      riskAmount: 700,
+      at: Date.now(),
+    });
+    expect(useStore.getState().flash).toMatchObject({ kind: 'wrong', title: 'LOST THE BID', amount: -700 });
+  });
+
   it('gives the organizer a toast rather than a full-screen flash', () => {
     useStore.setState({ me: null, role: 'organizer' });
     feed('QUESTION_RESULT', {

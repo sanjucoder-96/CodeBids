@@ -1159,6 +1159,11 @@
   font-size: var(--fs-sm);
 }
 
+.result__bid-note {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
 .result__explanation {
   text-align: left;
   overflow: hidden;
