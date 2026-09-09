@@ -75,7 +75,7 @@ CSI CLUB - CODE MARKET  (v${VERSION})
 
   --port <n>       HTTP + WebSocket port (default 4400)
   --db <path>      SQLite file (default ./data/code-market.db)
-  --passcode <s>   Organizer console passcode (else generated once and kept)
+  --passcode <s>   Organizer console passcode (default 1234, fixed across restarts)
   --team-seed <n>  Reproducible join codes: the same seed prints the same
                    cards on any machine. Omitted, codes are random.
   --seed <n>       Create n demo teams, then exit (adds to any that exist)

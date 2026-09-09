@@ -67,9 +67,15 @@ function findClientDist(): string | null {
   return null;
 }
 
-function randomPasscode(): string {
-  return String(Math.floor(1000 + Math.random() * 9000));
-}
+/**
+ * The default operator passcode.
+ *
+ * Fixed on purpose: the console is used from the organizer's own laptop on a
+ * physically controlled offline LAN, and a passcode that changed on every fresh
+ * database (it used to be random) meant the operator hunted for a new code each
+ * time. Override it for a private event with `--passcode <code>`.
+ */
+const DEFAULT_ORGANIZER_PASSCODE = '1234';
 
 export async function createApp(options: AppOptions): Promise<App> {
   const db = openDatabase({ file: options.dbFile });
@@ -83,10 +89,10 @@ export async function createApp(options: AppOptions): Promise<App> {
     repo.setMeta('secret', secret);
   }
 
-  let passcode = options.organizerPasscode ?? repo.getMeta('organizer_passcode') ?? '';
-  if (!passcode) {
-    passcode = randomPasscode();
-  }
+  // A fixed passcode that never changes across restarts or a fresh database:
+  // the `--passcode` flag wins, otherwise the fixed default. (No longer random,
+  // and no longer inherited from a stale value persisted by an earlier run.)
+  const passcode = options.organizerPasscode ?? DEFAULT_ORGANIZER_PASSCODE;
   repo.setMeta('organizer_passcode', passcode);
 
   const auth = new AuthService(repo, secret, passcode);
