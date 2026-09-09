@@ -154,7 +154,11 @@ export interface QuestionPublic {
   /** False while the question body is withheld. */
   revealed: boolean;
   question: QuestionData;
+  /** Amount deducted up front when the team takes this question (the stake). */
+  stake?: number;
+  /** Amount credited on a correct answer (the stake times the win multiplier). */
   reward?: number;
+  /** Amount forfeited on a wrong answer or timeout — equal to the stake. */
   penalty?: number;
 }
 
@@ -473,7 +477,10 @@ export interface TeamView {
   lastResult: {
     questionId: string;
     result: AttemptResult;
+    /** Capital credited at the result (the win payout; 0 on a wrong answer). */
     delta: number;
+    /** Amount that was staked up front when the question was taken. */
+    stake: number;
     detail?: string;
     explanation?: string;
     at: number;
@@ -490,8 +497,10 @@ export interface TeamView {
 
 export type TransactionType =
   | 'initial'
+  | 'question_stake'
   | 'question_reward'
   | 'question_penalty'
+  | 'premium_stake'
   | 'premium_reward'
   | 'premium_penalty'
   | 'manual_adjustment';

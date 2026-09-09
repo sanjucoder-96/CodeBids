@@ -104,6 +104,19 @@ export interface GameConfig {
   finalPremiumStartingBid: number;
   finalPremiumBidIncrement: number;
 
+  /* --- stake model (spec: deduct on take, pay a multiple back on win) --- */
+  /**
+   * Taking a question stakes an amount up front (a normal question's difficulty
+   * value, or a premium bid). A correct answer pays the stake back multiplied by
+   * these factors; a wrong answer or timeout forfeits the stake.
+   *   normal correct        -> stake x questionWinMultiplier   (2x)
+   *   premium winner correct -> bid x premiumWinMultiplier      (2x)
+   *   premium reclaim correct-> bid x premiumReclaimMultiplier  (1.5x)
+   */
+  questionWinMultiplier: number;
+  premiumWinMultiplier: number;
+  premiumReclaimMultiplier: number;
+
   /* --- finale --------------------------------------------------------- */
   /**
    * The global leaderboard is hidden from the projector and from participants
@@ -191,6 +204,12 @@ export const DEFAULT_CONFIG: GameConfig = {
   finalPremiumStartingBid: 200,
   finalPremiumBidIncrement: 100,
 
+  // Stake model: correct pays the stake back doubled (normal & premium winner)
+  // or 1.5x (premium reclaim by the second bidder). A wrong answer forfeits it.
+  questionWinMultiplier: 2,
+  premiumWinMultiplier: 2,
+  premiumReclaimMultiplier: 1.5,
+
   hideLeaderboardLastQuestions: 4,
   podiumPlaces: 3,
 
@@ -266,6 +285,12 @@ export function applyConfigPatch(
   if (next.finalPremiumBidIncrement <= 0) {
     errors.push('finalPremiumBidIncrement must be > 0');
     next.finalPremiumBidIncrement = base.finalPremiumBidIncrement;
+  }
+  for (const key of ['questionWinMultiplier', 'premiumWinMultiplier', 'premiumReclaimMultiplier'] as const) {
+    if (typeof next[key] !== 'number' || !Number.isFinite(next[key]) || next[key] <= 0) {
+      errors.push(`${key} must be > 0`);
+      next[key] = base[key];
+    }
   }
   if (next.blocks < 1) {
     errors.push('blocks must be >= 1');

@@ -20,7 +20,12 @@ export function PremiumScreen() {
 
   const risk = me.premiumRisk ?? premium.activeRisk ?? 0;
   const isReclaim = premium.attemptNumber >= 1 && premium.stage === 'sold';
-  const potential = me.capital + risk;
+  // Stake model: the bid is staked on the attempt. A correct answer pays it back
+  // at 2x for the winner or 1.5x for the reclaim (second) bidder, so the NET gain
+  // is (multiplier - 1) x bid. A wrong answer forfeits the bid.
+  const winMultiplier = isReclaim ? config.premiumReclaimMultiplier : config.premiumWinMultiplier;
+  const netGain = Math.round(risk * (winMultiplier - 1));
+  const potential = me.capital + netGain;
   const downside = Math.max(0, me.capital - risk);
 
   return (
@@ -66,7 +71,7 @@ export function PremiumScreen() {
           <div className="outcome outcome--gain">
             <span className="outcome__label">If correct</span>
             <span className="outcome__value num">{money(potential, symbol)}</span>
-            <span className="outcome__delta">+{money(risk, symbol)}</span>
+            <span className="outcome__delta">+{money(netGain, symbol)}</span>
           </div>
           <div className="outcome outcome--loss">
             <span className="outcome__label">If wrong</span>

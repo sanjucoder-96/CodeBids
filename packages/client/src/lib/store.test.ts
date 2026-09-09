@@ -366,8 +366,9 @@ describe('premium frames', () => {
 });
 
 describe('result frames', () => {
-  it('flashes CORRECT with the reward to the team that answered', () => {
+  it('flashes CORRECT with the payout to the team that answered', () => {
     useStore.setState({ me: me({ teamId: 'T01' }), role: 'participant' });
+    // Stake model: staked 100, correct pays 200 back (delta = payout credit).
     feed('QUESTION_RESULT', {
       teamId: 'T01',
       teamName: 'A',
@@ -375,7 +376,8 @@ describe('result frames', () => {
       slotIndex: 1,
       result: 'correct',
       delta: 200,
-      newCapital: 1200,
+      stake: 100,
+      newCapital: 1300,
       isPremium: false,
       riskAmount: null,
       at: Date.now(),
@@ -383,15 +385,17 @@ describe('result frames', () => {
     expect(useStore.getState().flash).toMatchObject({ kind: 'correct', amount: 200 });
   });
 
-  it('flashes INCORRECT with the loss', () => {
+  it('flashes INCORRECT with the forfeited stake', () => {
     useStore.setState({ me: me({ teamId: 'T01' }), role: 'participant' });
+    // Wrong: no result-time credit; the staked 100 (deducted on take) is lost.
     feed('QUESTION_RESULT', {
       teamId: 'T01',
       teamName: 'A',
       questionId: 'N01',
       slotIndex: 1,
       result: 'wrong',
-      delta: -100,
+      delta: 0,
+      stake: 100,
       newCapital: 900,
       isPremium: false,
       riskAmount: null,
@@ -402,27 +406,31 @@ describe('result frames', () => {
 
   it('frames a premium result as WON / LOST THE BID', () => {
     useStore.setState({ me: me({ teamId: 'T01' }), role: 'participant' });
+    // Winner staked 700; correct pays 2x = 1400 back (delta = payout credit).
     feed('QUESTION_RESULT', {
       teamId: 'T01',
       teamName: 'A',
       questionId: 'P01',
       slotIndex: 4,
       result: 'correct',
-      delta: 700,
+      delta: 1400,
+      stake: 700,
       newCapital: 2200,
       isPremium: true,
       riskAmount: 700,
       at: Date.now(),
     });
-    expect(useStore.getState().flash).toMatchObject({ kind: 'correct', title: 'WON THE BID', amount: 700 });
+    expect(useStore.getState().flash).toMatchObject({ kind: 'correct', title: 'WON THE BID', amount: 1400 });
 
+    // Wrong: the staked 700 bid is forfeited, nothing credited.
     feed('QUESTION_RESULT', {
       teamId: 'T01',
       teamName: 'A',
       questionId: 'P01',
       slotIndex: 4,
       result: 'wrong',
-      delta: -700,
+      delta: 0,
+      stake: 700,
       newCapital: 800,
       isPremium: true,
       riskAmount: 700,

@@ -15,7 +15,7 @@ import {
   startRound,
   type Harness,
 } from './helpers.js';
-import { questionPenalty, type Question } from '@code-market/shared';
+import { questionReward, type Question } from '@code-market/shared';
 
 let h: Harness;
 
@@ -268,9 +268,11 @@ describe('the 7-minute premium window (spec 6)', () => {
     h.engine.startAuction();
     h.engine.placeBid('T01', 400);
     h.engine.closeAuction();
-    h.engine.startPremiumAttempt();
 
+    // Capital before the attempt starts; taking it stakes the ₹400 bid, and a
+    // window-expiry timeout forfeits that stake (net -400).
     const before = capital(h, 'T01');
+    h.engine.startPremiumAttempt();
     h.engine.fireTimer(`window:${slot.questionId}`);
     expect(capital(h, 'T01')).toBe(before - 400);
   });
@@ -474,12 +476,26 @@ describe('question flow', () => {
     expect(capital(h, 'T01')).toBe(1500 + expected);
   });
 
-  it('penalises a wrong answer by difficulty', async () => {
+  it('stakes the difficulty value on take, then pays it back doubled on a correct answer', async () => {
     startRound(h);
     const { question } = openFirstQuestion(h);
-    const expected = { easy: 100, medium: 150, hard: 200, very_hard: 250 }[question.difficulty];
+    const stake = questionReward(h.engine.getConfig(), question, 0);
+    // Taking the question immediately deducts the stake from the wallet.
+    h.engine.unlockQuestion('T01', question.id, question.accessKey);
+    h.engine.joinQuestion('T01', question.id);
+    expect(capital(h, 'T01')).toBe(1500 - stake);
+    // A correct answer pays the stake back doubled (net +stake overall).
+    await h.engine.submitAnswer('T01', question.id, answerFor(question, true));
+    expect(capital(h, 'T01')).toBe(1500 + stake);
+  });
+
+  it('forfeits the staked difficulty value on a wrong answer', async () => {
+    startRound(h);
+    const { question } = openFirstQuestion(h);
+    // A wrong answer forfeits the stake (the difficulty value), not a separate penalty.
+    const stake = { easy: 100, medium: 150, hard: 200, very_hard: 300 }[question.difficulty];
     await play(h, 'T02', question, false);
-    expect(capital(h, 'T02')).toBe(1500 - expected);
+    expect(capital(h, 'T02')).toBe(1500 - stake);
   });
 
   it('rejects the wrong access key', () => {
@@ -656,24 +672,25 @@ describe('normal-question TAKE / SIT-OUT window (spec 6, 7)', () => {
   });
 });
 
-describe('cannot take a question you cannot afford to lose', () => {
-  it('blocks a team whose capital is below the question penalty, and allows one that can cover it', () => {
+describe('cannot take a question you cannot afford to stake', () => {
+  it('blocks a team whose capital is below the stake, and allows one that can cover it', () => {
     startRound(h, 3);
     const { question } = openFirstQuestion(h);
-    // The penalty is fixed by difficulty (100-250) and independent of capital.
-    const penalty = questionPenalty(h.engine.getConfig(), question, 0);
-    expect(penalty).toBeGreaterThan(0);
+    // Taking a question stakes its difficulty value (100-300), independent of capital.
+    const stake = questionReward(h.engine.getConfig(), question, 0);
+    expect(stake).toBeGreaterThan(0);
 
-    // Drain T01 below the penalty: it must not be able to take the question.
-    h.engine.adjustCapital('T01', penalty - 1 - capital(h, 'T01'), 'test: below penalty');
-    expect(capital(h, 'T01')).toBe(penalty - 1);
-    expect(() => h.engine.joinQuestion('T01', question.id)).toThrow(/at least|capital/i);
+    // Drain T01 below the stake: it must not be able to take the question.
+    h.engine.adjustCapital('T01', stake - 1 - capital(h, 'T01'), 'test: below stake');
+    expect(capital(h, 'T01')).toBe(stake - 1);
+    expect(() => h.engine.joinQuestion('T01', question.id)).toThrow(/at least|stake|capital/i);
     expect(h.engine.teamView('T01')?.questionState).not.toBe('in_progress');
 
-    // Exactly the penalty is enough to take it.
-    h.engine.adjustCapital('T02', penalty - capital(h, 'T02'), 'test: exactly penalty');
-    expect(capital(h, 'T02')).toBe(penalty);
+    // Exactly the stake is enough to take it (and is deducted, leaving ₹0).
+    h.engine.adjustCapital('T02', stake - capital(h, 'T02'), 'test: exactly the stake');
+    expect(capital(h, 'T02')).toBe(stake);
     expect(() => h.engine.joinQuestion('T02', question.id)).not.toThrow();
     expect(h.engine.teamView('T02')?.questionState).toBe('in_progress');
+    expect(capital(h, 'T02')).toBe(0); // the stake was deducted on take
   });
 });

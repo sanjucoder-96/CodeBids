@@ -428,35 +428,41 @@ export function applyFrame(frame: Envelope, set: Setter, get: Getter): void {
         teamName: string;
         result: string;
         delta: number;
+        stake: number;
         isPremium: boolean;
       };
       set({ lastResultAt: Date.now() });
+      const won = result.result === 'correct';
+      const stake = result.stake ?? 0;
+      // The wallet already dropped by the stake when the team took it, so the
+      // flash shows the PAYOUT on a win (result.delta) or the forfeited stake on
+      // a loss. `net` (payout minus stake, or just the lost stake) is for the
+      // organizer's ledger toast.
+      const flashAmount = won ? result.delta : -stake;
+      const net = won ? result.delta - stake : -stake;
       if (state.role === 'participant' && state.me?.teamId === result.teamId) {
         if (result.isPremium) {
-          // A premium is a BID the team staked on the question: a correct answer
-          // WINS the bid (gains it), a wrong answer or timeout LOSES the bid.
-          const won = result.result === 'correct';
           sound.play(won ? 'correct' : 'wrong');
           get().showFlash({
             kind: won ? 'correct' : 'wrong',
             title: won ? 'WON THE BID' : 'LOST THE BID',
-            amount: result.delta,
+            amount: flashAmount,
           });
-        } else if (result.result === 'correct') {
+        } else if (won) {
           sound.play('correct');
-          get().showFlash({ kind: 'correct', title: 'CORRECT', amount: result.delta });
+          get().showFlash({ kind: 'correct', title: 'CORRECT', amount: flashAmount });
         } else if (result.result === 'timeout') {
           sound.play('timeout');
-          get().showFlash({ kind: 'timeout', title: "TIME'S UP", amount: result.delta });
+          get().showFlash({ kind: 'timeout', title: "TIME'S UP", amount: flashAmount });
         } else {
           sound.play('wrong');
-          get().showFlash({ kind: 'wrong', title: 'INCORRECT', amount: result.delta });
+          get().showFlash({ kind: 'wrong', title: 'INCORRECT', amount: flashAmount });
         }
       } else if (state.role === 'organizer') {
         get().pushToast({
-          kind: result.result === 'correct' ? 'gain' : 'loss',
+          kind: won ? 'gain' : 'loss',
           title: `${result.teamName} - ${result.result.toUpperCase()}`,
-          detail: `${result.delta >= 0 ? '+' : ''}${result.delta}`,
+          detail: `${net >= 0 ? '+' : ''}${net}`,
         });
       }
       break;

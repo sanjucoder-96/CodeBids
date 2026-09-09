@@ -105,25 +105,35 @@ export function ResultScreen() {
               </div>
             ) : null}
 
-            {result.delta !== 0 ? (
+            {kind === 'correct' && result.delta > 0 ? (
               <motion.div
                 className="result__delta num"
-                data-sign={result.delta > 0 ? 'up' : 'down'}
+                data-sign="up"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.14, type: 'spring', stiffness: 300, damping: 22 }}
               >
-                {result.delta > 0 ? '+' : '-'}
-                {money(Math.abs(result.delta), symbol)}
+                +{money(result.delta, symbol)}
+              </motion.div>
+            ) : (kind === 'wrong' || kind === 'timeout') && result.stake > 0 ? (
+              <motion.div
+                className="result__delta num"
+                data-sign="down"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.14, type: 'spring', stiffness: 300, damping: 22 }}
+              >
+                -{money(result.stake, symbol)}
               </motion.div>
             ) : (
               <p className="muted">No capital changed hands.</p>
             )}
 
-            {premium && result.delta !== 0 ? (
+            {result.stake > 0 ? (
               <p className="result__bid-note muted">
-                You {result.delta > 0 ? 'won' : 'lost'} the bid for{' '}
-                {money(Math.abs(result.delta), symbol)}.
+                {kind === 'correct'
+                  ? `You staked ${money(result.stake, symbol)} — ${money(result.delta, symbol)} paid back.`
+                  : `Your ${money(result.stake, symbol)} ${premium ? 'bid' : 'stake'} is forfeited.`}
               </p>
             ) : null}
 

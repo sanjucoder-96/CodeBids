@@ -212,13 +212,14 @@ describe('reclaim: only the second bidder, and only if the winner fails (spec 7,
     expect(capital(h, 'T01')).toBe(before - 500); // committed now, and lost
   });
 
-  it('rewards the second bidder if they take it and are correct', () => {
+  it('rewards the second bidder at 1.5x their bid if they take it and are correct', () => {
     winnerFails();
     const before = capital(h, 'T01');
     h.engine.resolveReclaim('T01', true);
     h.engine.startPremiumAttempt();
     h.engine.forcePremiumResult('correct');
-    expect(capital(h, 'T01')).toBe(before + 500);
+    // Reclaim pays 1.5x the ₹500 bid: -500 staked, +750 back -> net +250.
+    expect(capital(h, 'T01')).toBe(before + 250);
   });
 
   it('never offers a reclaim to a third bidder even via the operator', () => {

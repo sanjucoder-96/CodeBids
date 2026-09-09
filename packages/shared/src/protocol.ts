@@ -119,7 +119,10 @@ export interface ResultBroadcast {
   questionId: string;
   slotIndex: number;
   result: AttemptResult;
+  /** Capital credited at the result: the win payout, or 0 on a wrong answer. */
   delta: number;
+  /** Amount staked up front when the question was taken (forfeited if wrong). */
+  stake: number;
   newCapital: number;
   isPremium: boolean;
   riskAmount: number | null;

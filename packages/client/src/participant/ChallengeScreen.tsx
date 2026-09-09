@@ -19,6 +19,7 @@ export function ChallengeScreen() {
   const question = useStore((s) => s.question);
   const me = useStore((s) => s.me);
   const config = useStore((s) => s.config);
+  const premiumState = useStore((s) => s.premium);
   const call = useStore((s) => s.call);
   const pushToast = useStore((s) => s.pushToast);
   const serverNow = useStore((s) => s.serverNow);
@@ -113,8 +114,18 @@ export function ChallengeScreen() {
 
   if (!submittable || !question || !me) return null;
 
-  const risk = premium ? (me.premiumRisk ?? 0) : (question.penalty ?? 0);
-  const gain = premium ? (me.premiumRisk ?? 0) : (question.reward ?? 0);
+  // Stake model: the stake (bid, or the question's difficulty value) is already
+  // deducted. `gain` is what a correct answer pays back; `risk` is the staked
+  // amount forfeited on a wrong answer. Premiums pay 2x (winner) or 1.5x (the
+  // second bidder's reclaim, attempt 2).
+  const premiumMultiplier =
+    premiumState?.attemptNumber === 2
+      ? config.premiumReclaimMultiplier
+      : config.premiumWinMultiplier;
+  const risk = premium ? (me.premiumRisk ?? 0) : (question.stake ?? question.penalty ?? 0);
+  const gain = premium
+    ? Math.round((me.premiumRisk ?? 0) * premiumMultiplier)
+    : (question.reward ?? 0);
 
   return (
     <div className={`screen challenge ${premium ? 'challenge--premium' : ''}`}>
@@ -188,7 +199,7 @@ export function ChallengeScreen() {
               >
                 <p className="muted">
                   Submit final answer? You cannot change it
-                  {risk > 0 ? `, and a wrong answer costs ${money(risk, symbol)}` : ''}.
+                  {risk > 0 ? `, and a wrong answer forfeits your ${money(risk, symbol)} stake` : ''}.
                 </p>
                 <div className="row">
                   <button

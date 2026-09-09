@@ -274,11 +274,12 @@ describe('a full block over the LAN', () => {
         .call('SUBMIT_ANSWER', { questionId: question.id, submission: answerFor(question, false) });
     }
 
-    const reward = { easy: 100, medium: 150, hard: 200, very_hard: 300 }[question.difficulty];
-    const penalty = { easy: 100, medium: 150, hard: 200, very_hard: 250 }[question.difficulty];
-    expect(app.repo.getTeam('T01')?.capital).toBe(1500 + reward);
-    expect(app.repo.getTeam('T05')?.capital).toBe(1500 - penalty);
-    expect(app.repo.getTeam('T07')?.capital).toBe(1500);
+    // Stake model: taking a question stakes its difficulty value; a correct
+    // answer pays 2x (net +stake), a wrong answer forfeits the stake (net -stake).
+    const stake = { easy: 100, medium: 150, hard: 200, very_hard: 300 }[question.difficulty];
+    expect(app.repo.getTeam('T01')?.capital).toBe(1500 + stake); // correct
+    expect(app.repo.getTeam('T05')?.capital).toBe(1500 - stake); // wrong
+    expect(app.repo.getTeam('T07')?.capital).toBe(1500); // sat out
 
     await organizer.call('CLOSE_QUESTION', {});
   }, 30_000);
@@ -360,6 +361,9 @@ describe('premium over the LAN', () => {
     const question = currentQuestion();
     const winner = players.get('T01')!;
     winner.clear();
+    // Capital before the attempt; taking it stakes the ₹500 bid, and a wrong
+    // answer forfeits it (net -500).
+    const before = app.repo.getTeam('T01')?.capital as number;
     // The operator opens the winner's attempt (the winner cannot sit out).
     await organizer.call('START_PREMIUM_ATTEMPT', {});
 
@@ -373,7 +377,6 @@ describe('premium over the LAN', () => {
     const bystanderDump = JSON.stringify(bystander.frames);
     expect(bystanderDump).not.toContain(question.evaluation.explanation ?? '@@none@@');
 
-    const before = app.repo.getTeam('T01')?.capital as number;
     await winner.call('SUBMIT_ANSWER', {
       questionId: question.id,
       submission: answerFor(question, false),
@@ -393,7 +396,8 @@ describe('premium over the LAN', () => {
       submission: answerFor(question, true),
     });
 
-    expect(app.repo.getTeam('T02')?.capital).toBe(t02Before + 400);
+    // Reclaim pays 1.5x the ₹400 bid: -400 staked, +600 back -> net +200.
+    expect(app.repo.getTeam('T02')?.capital).toBe(t02Before + 200);
     expect(app.repo.getPremiumState(question.id)?.outcome).toBe('won_reclaim');
     expect(app.repo.listAuctions()).toHaveLength(1);
   }, 40_000);

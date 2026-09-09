@@ -238,14 +238,15 @@ describe('reclaim (spec 8)', () => {
     expect(h.lastEvent('PREMIUM_RECLAIM_OFFERED')).toBeUndefined();
   });
 
-  it('settles attempt 2 against the reclaim team own bid', async () => {
+  it('settles attempt 2 at 1.5x the reclaim team own bid', async () => {
     await ladderAuction();
     const before = capital(h, 'T05');
     h.engine.resolveReclaim('T05', true);
     h.engine.startPremiumAttempt();
     await h.engine.submitAnswer('T05', question.id, answerFor(question, true));
 
-    expect(capital(h, 'T05')).toBe(before + 500);
+    // Reclaim pays 1.5x the ₹500 bid: -500 staked, +750 back -> net +250.
+    expect(capital(h, 'T05')).toBe(before + 250);
     expect(h.engine.currentPremium()?.outcome).toBe('won_reclaim');
   });
 

@@ -115,9 +115,11 @@ describe('premium attempt timeout (spec 1)', () => {
     h.engine.startAuction();
     h.engine.placeBid('T01', 400);
     h.engine.closeAuction();
-    h.engine.startPremiumAttempt();
 
+    // Capital before the attempt; the ₹400 bid is staked on start, and a correct
+    // staged auto-submit pays it back 2x -> net +400 for the winning bidder.
     const before = capital(h, 'T01');
+    h.engine.startPremiumAttempt();
     h.engine.stageAnswer('T01', question.id, answerFor(question, true));
     expect(h.engine.fireTimer(`premium:${question.id}`)).toBe(true);
     await flush();

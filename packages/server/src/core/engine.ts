@@ -41,13 +41,10 @@ import {
   normalSlots,
   padTeamNumber,
   premiumSlots,
-  questionPenalty as calcPenalty,
   questionReward as calcReward,
   rankMap,
   redactForFinalStretch,
   resolveAdjustment,
-  resolvePremium,
-  resolveQuestion,
   timeLimitFor,
   validateBid,
 } from '@code-market/shared';
@@ -713,14 +710,13 @@ export class GameEngine {
       if (this.config.requireAccessKey && participation?.state !== 'available') {
         throw new EngineError('locked', 'Enter the question key first');
       }
-      // A team must be able to cover what it risks: a wrong answer (or a
-      // timeout) costs the question's penalty, so a team whose capital is below
-      // that penalty cannot afford to take the question.
-      const penalty = calcPenalty(this.config, question, team.capital);
-      if (penalty > 0 && team.capital < penalty) {
+      // Taking the question stakes its difficulty value up front, so a team must
+      // hold at least that stake to take it (it is deducted on join, below).
+      const stake = calcReward(this.config, question, team.capital);
+      if (stake > 0 && team.capital < stake) {
         throw new EngineError(
           'insufficient_capital',
-          `You need at least ${penalty} to take this question (a wrong answer costs ${penalty}).`,
+          `You need at least ${stake} to take this question — taking it stakes ${stake}.`,
         );
       }
     }
@@ -729,6 +725,15 @@ export class GameEngine {
     const joinedAt = this.now();
     this.repo.setParticipation(teamId, slot.index, questionId, 'in_progress', { joined: true });
     this.scheduleTeamDeadline(teamId, slot.index, question, joinedAt);
+
+    // Deduct the stake the moment the team commits (spec: money comes out of the
+    // wallet immediately on take; a correct answer pays it back multiplied).
+    if (slot.kind === 'normal') {
+      const stake = calcReward(this.config, question, team.capital);
+      if (stake > 0) {
+        this.applyCapital(team, -stake, 'question_stake', `${questionId} stake`, questionId, slot.index);
+      }
+    }
 
     this.audit('QUESTION_JOINED', { teamId, questionId, slotIndex: slot.index });
     this.emit(
@@ -935,13 +940,12 @@ export class GameEngine {
     const team = this.requireTeam(teamId);
     this.clearTimer(`deadline:${teamId}:${slot.index}`);
 
-    const settlement = resolveQuestion(
-      this.config,
-      question,
-      team.capital,
-      resolution,
-      extra.elapsed ?? 0,
-    );
+    // The stake was deducted when the team took the question. A correct answer
+    // pays it back multiplied; a wrong answer or timeout forfeits it (nothing
+    // more is deducted here).
+    const stake = calcReward(this.config, question, team.capital);
+    const credit = resolution === 'correct' ? Math.round(stake * this.config.questionWinMultiplier) : 0;
+    const net = credit - stake; // correct: +stake; wrong/timeout: -stake
 
     this.repo.insertAttempt({
       teamId,
@@ -949,7 +953,8 @@ export class GameEngine {
       slotIndex: slot.index,
       attemptNumber: 1,
       result: resolution,
-      scoreChange: settlement.delta,
+      scoreChange: net,
+      riskAmount: stake,
       durationMs: extra.elapsed ?? null,
       detail: outcome.detail ?? null,
       submission: extra.submission,
@@ -957,14 +962,16 @@ export class GameEngine {
     this.repo.setParticipation(teamId, slot.index, question.id, 'resolved');
     this.repo.setStagedSubmission(teamId, slot.index, null);
 
-    this.applyCapital(
-      team,
-      settlement.delta,
-      resolution === 'correct' ? 'question_reward' : 'question_penalty',
-      `${question.id} ${resolution}`,
-      question.id,
-      slot.index,
-    );
+    if (credit > 0) {
+      this.applyCapital(
+        team,
+        credit,
+        'question_reward',
+        `${question.id} ${resolution} (stake ${stake} x${this.config.questionWinMultiplier})`,
+        question.id,
+        slot.index,
+      );
+    }
 
     this.audit('QUESTION_RESULT', {
       teamId,
@@ -972,16 +979,18 @@ export class GameEngine {
       slotIndex: slot.index,
       metadata: {
         result: resolution,
-        delta: settlement.delta,
+        stake,
+        credit,
+        net,
         difficulty: question.difficulty,
         domain: question.domain,
         durationMs: extra.elapsed ?? null,
       },
     });
 
-    this.emitResult(team, question, slot, resolution, settlement.delta, null);
+    this.emitResult(team, question, slot, resolution, credit, stake);
     this.broadcastLiveEvents();
-    return settlement.delta;
+    return net;
   }
 
   private emitResult(
@@ -989,8 +998,10 @@ export class GameEngine {
     question: Question,
     slot: SequenceSlot,
     resolution: 'correct' | 'wrong' | 'timeout',
-    delta: number,
-    riskAmount: number | null,
+    /** Capital credited at the result: the win payout, or 0 on a wrong answer. */
+    credit: number,
+    /** Amount staked up front when the question was taken. */
+    stake: number,
   ): void {
     const fresh = this.repo.getTeam(team.id) as Team;
     const payload = {
@@ -999,10 +1010,11 @@ export class GameEngine {
       questionId: question.id,
       slotIndex: slot.index,
       result: resolution,
-      delta,
+      delta: credit,
+      stake,
       newCapital: fresh.capital,
       isPremium: slot.kind === 'premium',
-      riskAmount,
+      riskAmount: slot.kind === 'premium' ? stake : null,
       at: this.now(),
     };
     this.emit('QUESTION_RESULT', payload, STAGE);
@@ -1500,6 +1512,21 @@ export class GameEngine {
       unlocked: true,
       joined: true,
     });
+
+    // Taking the premium stakes the bid up front (spec: "the amount he bid should
+    // cut initially"); a correct answer pays it back multiplied, a wrong answer
+    // forfeits it. Only ever charged when the team actually attempts.
+    if (risk > 0) {
+      this.applyCapital(
+        this.requireTeam(teamId),
+        -risk,
+        'premium_stake',
+        `Premium ${slot.questionId} stake (bid ${risk})`,
+        slot.questionId,
+        slot.index,
+      );
+    }
+
     this.setPhase('premium_solving');
     this.setProjectorMode('auto');
 
@@ -1591,7 +1618,15 @@ export class GameEngine {
     this.clearTimer(`premium:${questionId}`);
     this.clearTimer('global');
 
-    const settlement = resolvePremium(this.config, team.capital, risk, resolution);
+    // The bid was staked when the attempt began. A correct answer pays it back
+    // multiplied - 2x for the winning bidder (attempt 1), 1.5x for the second
+    // bidder's reclaim (attempt 2). A wrong answer or timeout forfeits the bid.
+    const multiplier =
+      premium.attemptNumber === 1
+        ? this.config.premiumWinMultiplier
+        : this.config.premiumReclaimMultiplier;
+    const credit = resolution === 'correct' ? Math.round(risk * multiplier) : 0;
+    const net = credit - risk;
 
     this.repo.insertAttempt({
       teamId,
@@ -1599,7 +1634,7 @@ export class GameEngine {
       slotIndex: slot.index,
       attemptNumber: premium.attemptNumber || 1,
       result: resolution,
-      scoreChange: settlement.delta,
+      scoreChange: net,
       riskAmount: risk,
       detail: detail ?? null,
       submission,
@@ -1607,23 +1642,25 @@ export class GameEngine {
     this.repo.setParticipation(teamId, slot.index, questionId, 'resolved');
     this.repo.setStagedSubmission(teamId, slot.index, null);
 
-    this.applyCapital(
-      team,
-      settlement.delta,
-      resolution === 'correct' ? 'premium_reward' : 'premium_penalty',
-      `Premium ${questionId} ${resolution} (risk ${risk})`,
-      questionId,
-      slot.index,
-    );
+    if (credit > 0) {
+      this.applyCapital(
+        team,
+        credit,
+        'premium_reward',
+        `Premium ${questionId} ${resolution} (bid ${risk} x${multiplier})`,
+        questionId,
+        slot.index,
+      );
+    }
 
     this.audit('PREMIUM_RESULT', {
       teamId,
       questionId,
       slotIndex: slot.index,
-      metadata: { result: resolution, risk, delta: settlement.delta, attempt: premium.attemptNumber },
+      metadata: { result: resolution, risk, credit, net, multiplier, attempt: premium.attemptNumber },
     });
 
-    this.emitResult(team, question, slot, resolution, settlement.delta, risk);
+    this.emitResult(team, question, slot, resolution, credit, risk);
 
     if (resolution === 'correct') {
       premium.stage = 'closed';
@@ -1634,7 +1671,7 @@ export class GameEngine {
       this.repo.savePremiumState(premium);
       this.emit('PREMIUM_CLOSED', { premium }, ALL);
       this.enterPremiumResult();
-      return settlement.delta;
+      return net;
     }
 
     premium.ladder =
@@ -1650,17 +1687,17 @@ export class GameEngine {
 
     if (!canStartAnotherAttempt(premium)) {
       this.closePremium('lost');
-      return settlement.delta;
+      return net;
     }
 
     const next = nextCandidate(premium.ladder);
     if (!next) {
       this.closePremium('no_takers');
-      return settlement.delta;
+      return net;
     }
 
     this.offerReclaim(next.teamId);
-    return settlement.delta;
+    return net;
   }
 
   offerReclaim(teamId?: string): void {
@@ -1997,8 +2034,12 @@ export class GameEngine {
       question: revealed ? question.question : { prompt: '' },
     };
     if (question.kind === 'normal') {
-      base.reward = calcReward(this.config, question, capital);
-      base.penalty = calcPenalty(this.config, question, capital);
+      // Stake model: taking the question deducts its difficulty value; a correct
+      // answer pays that back multiplied; a wrong answer forfeits it.
+      const stake = calcReward(this.config, question, capital);
+      base.stake = stake;
+      base.reward = Math.round(stake * this.config.questionWinMultiplier);
+      base.penalty = stake;
     }
     return base;
   }
@@ -2301,7 +2342,11 @@ export class GameEngine {
         ? {
             questionId: last.questionId,
             result: last.result,
-            delta: last.scoreChange,
+            // Capital credited at the result (the win payout; 0 on a loss).
+            // The attempt stores the NET (scoreChange) and the stake (riskAmount);
+            // credit = net + stake on a win, 0 otherwise.
+            delta: last.result === 'correct' ? last.scoreChange + (last.riskAmount ?? 0) : 0,
+            stake: last.riskAmount ?? 0,
             detail: last.detail ?? undefined,
             explanation:
               this.config.revealExplanations && lastQuestion

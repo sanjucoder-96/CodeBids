@@ -34,10 +34,12 @@ export function QuestionScreen() {
   const unlocked = me.questionState === 'available';
   const skipped = me.questionState === 'skipped';
   const symbol = config.currencySymbol;
-  // A wrong answer costs the penalty, so a team must be able to cover it to take
-  // the question. The server enforces this too; this just keeps the button honest.
-  const penalty = question.penalty ?? 0;
-  const canAfford = penalty === 0 || me.capital >= penalty;
+  // Stake model: taking the question deducts the stake now; a correct answer
+  // pays it back as `payout`; a wrong answer forfeits the stake. The team must
+  // hold the stake to take it (the server enforces this too).
+  const stake = question.stake ?? question.penalty ?? 0;
+  const payout = question.reward ?? 0;
+  const canAfford = stake === 0 || me.capital >= stake;
 
   async function unlock(event: FormEvent) {
     event.preventDefault();
@@ -140,19 +142,19 @@ export function QuestionScreen() {
         </div>
 
         <div className="q-card__stakes">
+          <div className="stake">
+            <span className="stake__label">Stake to take</span>
+            <span className="stake__value num">{money(stake, symbol)}</span>
+          </div>
           <div className="stake stake--gain">
             <span className="stake__label">If correct</span>
-            <span className="stake__value num">+{money(question.reward ?? 0, symbol)}</span>
+            <span className="stake__value num">+{money(payout, symbol)}</span>
           </div>
           <div className="stake stake--loss">
             <span className="stake__label">If wrong or timed out</span>
             <span className="stake__value num">
-              {(question.penalty ?? 0) > 0 ? `-${money(question.penalty ?? 0, symbol)}` : 'No penalty'}
+              {stake > 0 ? `-${money(stake, symbol)}` : 'No stake'}
             </span>
-          </div>
-          <div className="stake">
-            <span className="stake__label">Your capital</span>
-            <span className="stake__value num">{money(me.capital, symbol)}</span>
           </div>
         </div>
 
@@ -216,9 +218,9 @@ export function QuestionScreen() {
                 <h3 className="q-card__decision-title">Commit to this question?</h3>
                 <p className="muted">
                   {!canAfford
-                    ? `You need at least ${money(penalty, symbol)} to take this question — a wrong answer costs ${money(penalty, symbol)}, and your capital is ${money(me.capital, symbol)}.`
+                    ? `You need at least ${money(stake, symbol)} to take this — taking it stakes ${money(stake, symbol)}, and your capital is ${money(me.capital, symbol)}.`
                     : config.questionOptIn
-                      ? 'Joining starts your clock and reveals the question. Sitting out costs nothing.'
+                      ? `Taking it stakes ${money(stake, symbol)} now; a correct answer pays ${money(payout, symbol)} back. Sitting out costs nothing.`
                       : 'Start the question when you are ready.'}
                 </p>
               </div>
@@ -233,7 +235,7 @@ export function QuestionScreen() {
                   onClick={join}
                   disabled={busy || !canAfford}
                   autoFocus={canAfford}
-                  title={canAfford ? undefined : `Not enough capital — you need at least ${money(penalty, symbol)}`}
+                  title={canAfford ? undefined : `Not enough capital — you need at least ${money(stake, symbol)}`}
                 >
                   Take it on
                 </button>
