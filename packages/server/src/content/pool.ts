@@ -1,10 +1,24 @@
 /**
  * The question POOL (spec sections 1, 4, 22).
  *
- * FINAL Round 3 organizer bank: 32 questions (26 normal + 6 premium), approved
+ * FINAL Round 3 organizer bank: 32 authored questions (Q01-Q32), approved
  * across passes 1-3. Scope is C, Python, data structures in C (linked lists,
  * stacks & queues, graphs / BFS / DFS, trees, heap terminology), introductory
- * DBMS/SQL and limited Java/OOP.
+ * DBMS/SQL and limited Java/OOP. The bank is authored in two halves of 16:
+ *
+ *   Q01-Q16 : 14 normal + 2 premium (medium-leaning)
+ *   Q17-Q32 : 12 normal + 4 premium (hard/very-hard-leaning)
+ *
+ * The default round shape (config.blocks=4 x questionsPerBlock=3) needs
+ * EXACTLY 12 normal + 4 premium per game - which Q17-Q32 supplies exactly, with
+ * nothing left over and nothing short. Q01-Q16 cannot fill a game on its own
+ * (only 2 premiums against 4 required blocks) and would otherwise dilute the
+ * draw with an uneven, medium-heavy mix. So Q17-Q32 is the ACTIVE pool fed to
+ * every game; Q01-Q16 is kept as RESERVE_POOL (exported, not seeded) rather
+ * than deleted, in case a future round wants it.
+ *
+ * QUESTION_POOL below is therefore the ACTIVE 16, not all 32 - see FULL_BANK
+ * for every authored question (used for the organizer answer-key export).
  *
  * This is NOT the running order. The server draws a concrete sequence from this
  * pool at game start: three RANDOM normal questions, then a premium, repeated.
@@ -885,10 +899,31 @@ new B();`,
   },
 ];
 
-export const QUESTION_POOL: Question[] = [...NORMAL, ...PREMIUM].map(draft);
+/** Q-number parsed from an id like "Q17" -> 17, "PRM-.." style ids are not used here. */
+const qNumber = (id: string): number => Number(id.slice(1));
+
+/** The active half: Q17-Q32 (12 normal + 4 premium - exactly one game's worth). */
+const isActive = (d: Draft): boolean => qNumber(d.id) >= 17;
+
+/**
+ * The pool actually seeded into every game: Q17-Q32 only (12 normal + 4
+ * premium). See the file header for why the first half is excluded by design
+ * rather than left to a random draw.
+ */
+export const QUESTION_POOL: Question[] = [...NORMAL, ...PREMIUM].filter(isActive).map(draft);
 
 export const NORMAL_POOL = QUESTION_POOL.filter((q) => q.kind === 'normal');
 export const PREMIUM_POOL = QUESTION_POOL.filter((q) => q.kind === 'premium');
+
+/**
+ * Q01-Q16, kept for reference / a possible future round. NOT included in
+ * QUESTION_POOL and NOT fed to `engine.seedQuestions()` by default, so these
+ * are never drawn into a live game.
+ */
+export const RESERVE_POOL: Question[] = [...NORMAL, ...PREMIUM].filter((d) => !isActive(d)).map(draft);
+
+/** Every authored question, active + reserve (32) - for the organizer answer-key export. */
+export const FULL_BANK: Question[] = [...NORMAL, ...PREMIUM].map(draft);
 
 /** Pool composition, surfaced to the organizer so gaps are visible. */
 export function poolSummary(): Record<string, number> {
