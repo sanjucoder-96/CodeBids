@@ -479,16 +479,6 @@
   margin-bottom: var(--sp-4);
 }
 
-.challenge__hint {
-  margin-top: var(--sp-4);
-  padding: var(--sp-3);
-  border-radius: var(--r-md);
-  background: var(--accent-dim);
-  border: 1px solid rgba(61, 139, 255, 0.24);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
 .challenge__answer {
   display: flex;
   flex-direction: column;

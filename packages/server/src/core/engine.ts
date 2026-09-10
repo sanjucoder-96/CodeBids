@@ -106,6 +106,12 @@ export const ORGANIZER: Audience = { kind: 'organizer' };
 export const STAGE: Audience = { kind: 'stage' };
 const toTeam = (teamId: string): Audience => ({ kind: 'team', teamId });
 
+/** Drop the hint from a question body — hints are never shown to teams. */
+const stripHint = (body: Question['question']): Question['question'] => {
+  const { hint: _hint, ...rest } = body;
+  return rest;
+};
+
 export class EngineError extends Error {
   constructor(
     readonly code: string,
@@ -2035,7 +2041,9 @@ export class GameEngine {
       blockNumber: slot.blockNumber,
       positionInBlock: slot.positionInBlock,
       revealed,
-      question: revealed ? question.question : { prompt: '' },
+      // Hints are never provided to teams: strip it from the body before it
+      // travels over the wire, so it cannot be read from the client payload.
+      question: revealed ? stripHint(question.question) : { prompt: '' },
     };
     if (question.kind === 'normal') {
       // Stake model: taking the question deducts its difficulty value; a correct

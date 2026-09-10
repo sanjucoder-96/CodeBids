@@ -175,11 +175,6 @@ export function ChallengeScreen() {
               {question.question.code}
             </pre>
           ) : null}
-          {question.question.hint ? (
-            <p className="challenge__hint">
-              <span className="label">Hint</span> {question.question.hint}
-            </p>
-          ) : null}
         </div>
 
         <div className="panel panel--pad challenge__answer">
