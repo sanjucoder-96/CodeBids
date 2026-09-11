@@ -452,13 +452,13 @@ mystery(node):
   mystery(node.left)
   if node has BOTH left and right: print(node)
   mystery(node.right)`,
-      placeholder: 'e.g. 3 6',
+      placeholder: 'e.g. 3 6 8',
       hint: 'It is an in-order walk that prints only nodes with two children.',
     },
     evaluation: {
-      acceptedAnswers: spacedForms([3, 6]),
+      acceptedAnswers: spacedForms([3, 6, 8]),
       explanation:
-        'In in-order order the nodes with both children are visited as 3 (children 1,6) and 6 (children 4,7). 8 has two children but is printed after its left subtree - order in-order is 3 then 6. Output: 3 6.',
+        'In in-order order the nodes with both children are visited as 3 (children 1,6), then 6 (children 4,7), then 8 (children 3,10) once its entire left subtree - including the print of 6 - has completed. Output: 3 6 8.',
     },
   },
   {
@@ -580,12 +580,12 @@ print(c)`,
     kind: 'normal',
     title: 'Stack — Minimum Information',
     domain: 'dsa',
-    type: 'mcq',
+    type: 'multi',
     difficulty: 'hard',
     accessKey: 'Q-6619',
     question: {
       prompt:
-        'Operations on an empty stack: PUSH 5, PUSH 2, PUSH 8, POP, PUSH 3, POP, PUSH 7. Which statement is DEFINITELY true afterwards?',
+        'Operations on an empty stack: PUSH 5, PUSH 2, PUSH 8, POP, PUSH 3, POP, PUSH 7. Select ALL statements that are true afterwards.',
       options: [
         { id: 'a', text: 'The top element is 8.' },
         { id: 'b', text: 'The bottom element is 5.' },
@@ -594,9 +594,9 @@ print(c)`,
       ],
     },
     evaluation: {
-      correctOptionIds: ['b'],
+      correctOptionIds: ['b', 'c', 'd'],
       explanation:
-        'Final stack bottom→top is 5, 2, 7 (8 and 3 were popped). The top is 7, there are 3 elements but the guaranteed structural fact asked is the bottom being 5; 2 sits above 5, so the top is not 8. B is the correct definite statement.',
+        'Final stack bottom→top is 5, 2, 7 (8 and 3 were popped). The bottom is 5 (B), there are exactly 3 elements (C), and 2 sits directly above 5 (D) - all true. Only the top being 8 (A) is false; the top is actually 7.',
     },
   },
   {
@@ -638,9 +638,9 @@ print(c)`,
       ],
     },
     evaluation: {
-      correctOptionIds: ['d'],
+      correctOptionIds: ['c'],
       explanation:
-        'M is the root. B is next in preorder and its subtree (inorder A B C D E) has A on the left and D on the right; within D’s subtree the preorder D C E / inorder C D E makes E the right child of D... reconstructing, B’s right child is E.',
+        'M is the root. B is next in preorder; its subtree (inorder A B C D E) splits into A on the left and D, C, E on the right, so B’s right child is D. Within D’s own subtree (preorder D C E / inorder C D E), D’s children are C (left) and E (right) - but the question asks for B’s right child, which is D.',
     },
   },
   {
