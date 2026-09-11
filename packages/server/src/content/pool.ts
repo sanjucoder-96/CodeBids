@@ -187,7 +187,7 @@ print(a)`,
     question: {
       prompt:
         'A circular queue of capacity 5 contains 20, 30, 40 (front to rear). Dequeue twice, then enqueue 50 and 60. Give the final front-to-rear sequence.',
-      placeholder: 'e.g. 40, 50, 60',
+      placeholder: 'e.g. 10, 20, 30',
     },
     evaluation: {
       acceptedAnswers: nodeForms([40, 50, 60], false),
@@ -452,7 +452,7 @@ mystery(node):
   mystery(node.left)
   if node has BOTH left and right: print(node)
   mystery(node.right)`,
-      placeholder: 'e.g. 3 6 8',
+      placeholder: 'e.g. 2 5',
       hint: 'It is an in-order walk that prints only nodes with two children.',
     },
     evaluation: {
@@ -610,7 +610,7 @@ print(c)`,
     question: {
       prompt:
         'Q = 10,20,30,40 (front to rear); S empty. Perform: PUSH(S, DEQUEUE(Q)); PUSH(S, DEQUEUE(Q)); ENQUEUE(Q, POP(S)); PUSH(S, DEQUEUE(Q)); then pop everything from S and print in pop order.',
-      placeholder: 'e.g. 30 10',
+      placeholder: 'e.g. 5 8',
       hint: 'Track S top-to-bottom as you go.',
     },
     evaluation: {
