@@ -80,10 +80,15 @@ function nodeForms(nodes: (number | string)[], withNull: boolean): string[] {
   return Array.from(new Set(forms));
 }
 
-/** Space-separated output that should also accept comma separators. */
+/**
+ * Space-separated output that should also accept comma separators, and one
+ * value per line - the answer box for 'output' questions is a multi-line
+ * textarea, so a team typing each number on its own line is just as correct
+ * as typing them on one line.
+ */
 function spacedForms(tokens: (number | string)[]): string[] {
   const s = tokens.map(String);
-  return Array.from(new Set([s.join(' '), s.join(', '), s.join(',')]));
+  return Array.from(new Set([s.join(' '), s.join(', '), s.join(','), s.join('\n')]));
 }
 
 /** Literal output (Python repr). Accepts the canonical form, a
@@ -826,8 +831,8 @@ print(a)`,
     question: {
       prompt: 'PREMIUM. Trace the pointer rewiring and choose the resulting list.',
       code: `Start: 10 → 20 → 30 → 40 → 50 → 60 → NULL.
-p = head->next;          // 20
-q = p->next->next;       // 40
+p = head->next;
+q = p->next->next;
 
 p->next = q->next;
 q->next = p->next->next;
