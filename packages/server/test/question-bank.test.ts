@@ -1,21 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import type { Question } from '@code-market/shared';
-import { QUESTION_POOL, NORMAL_POOL, PREMIUM_POOL, RESERVE_POOL, FULL_BANK } from '../src/content/pool.js';
+import { ACTIVE_IDS, QUESTION_POOL, NORMAL_POOL, PREMIUM_POOL, RESERVE_POOL, FULL_BANK } from '../src/content/pool.js';
 import { makeHarness } from './helpers.js';
 
 describe('Round 3 final question bank', () => {
-  it('the ACTIVE pool is Q17-Q32: 12 normal + 4 premium, matching one game exactly', () => {
+  it('the ACTIVE pool is the curated ACTIVE_IDS set: 12 normal + 4 premium, matching one game exactly', () => {
     expect(QUESTION_POOL).toHaveLength(16);
     expect(NORMAL_POOL).toHaveLength(12);
     expect(PREMIUM_POOL).toHaveLength(4);
-    for (const q of QUESTION_POOL) expect(Number(q.id.slice(1)), q.id).toBeGreaterThanOrEqual(17);
+    for (const q of QUESTION_POOL) expect(ACTIVE_IDS.has(q.id), q.id).toBe(true);
   });
 
-  it('RESERVE_POOL holds Q01-Q16 (14 normal + 2 premium), kept but not seeded', () => {
+  it('the active pool has a genuine difficulty spread, not a hard/very_hard skew', () => {
+    const byTier: Record<string, number> = {};
+    for (const q of QUESTION_POOL) byTier[q.difficulty] = (byTier[q.difficulty] ?? 0) + 1;
+    expect(byTier).toEqual({ medium: 5, hard: 5, very_hard: 6 });
+  });
+
+  it('RESERVE_POOL holds everything not selected into ACTIVE_IDS (14 normal + 2 premium), kept but not seeded', () => {
     expect(RESERVE_POOL).toHaveLength(16);
     expect(RESERVE_POOL.filter((q) => q.kind === 'normal')).toHaveLength(14);
     expect(RESERVE_POOL.filter((q) => q.kind === 'premium')).toHaveLength(2);
-    for (const q of RESERVE_POOL) expect(Number(q.id.slice(1)), q.id).toBeLessThanOrEqual(16);
+    for (const q of RESERVE_POOL) expect(ACTIVE_IDS.has(q.id), q.id).toBe(false);
   });
 
   it('FULL_BANK is all 32 authored questions (active + reserve)', () => {
@@ -80,8 +86,8 @@ describe('Round 3 final question bank', () => {
       const premiums = slots.filter((s) => s.kind === 'premium');
       expect(normals).toHaveLength(12);
       expect(premiums).toHaveLength(4);
-      // Every drawn id belongs to the active Q17..Q32 half.
-      for (const s of slots) expect(Number(s.questionId.slice(1))).toBeGreaterThanOrEqual(17);
+      // Every drawn id belongs to the curated active set.
+      for (const s of slots) expect(ACTIVE_IDS.has(s.questionId), s.questionId).toBe(true);
       // Exactly the 12 active normals are used (no repeats, none left out) -
       // the pool size equals the draw size, so composition is deterministic.
       expect(new Set(normals.map((s) => s.questionId)).size).toBe(12);
